@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      (function() {
+        var nativeFetch = typeof window !== 'undefined' && typeof window.fetch === 'function' ? window.fetch.bind(window) : null;
+        function patchFetch(target) {
+          try {
+            if (!target) return;
+            var desc = Object.getOwnPropertyDescriptor(target, 'fetch');
+            if (desc && (desc.configurable || typeof desc.set === 'undefined')) {
+              var currentFn = nativeFetch;
+              Object.defineProperty(target, 'fetch', {
+                get: function() { return currentFn; },
+                set: function(fn) { currentFn = fn; },
+                configurable: true,
+                enumerable: true
+              });
+            }
+          } catch (_) {}
+        }
+
+        try {
+          patchFetch(window);
+          patchFetch(Object.getPrototypeOf(window));
+          if (typeof Window !== 'undefined' && Window.prototype) {
+            patchFetch(Window.prototype);
+          }
+        } catch (_) {}
+
+        // Global error suppression for external chrome extensions or third-party interceptor errors
+        window.addEventListener('error', function(e) {
+          var isExt = (e && e.filename && e.filename.indexOf('chrome-extension://') !== -1) ||
+                      (e && e.message && (
+                        e.message.indexOf('Cannot set property fetch') !== -1 ||
+                        e.message.indexOf('requests.js') !== -1
+                      ));
+          if (isExt) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            return true;
+          }
+        }, true);
+
+        var prevOnError = window.onerror;
+        window.onerror = function(msg, url, line, col, error) {
+          if ((typeof url === 'string' && url.indexOf('chrome-extension://') !== -1) ||
+              (typeof msg === 'string' && (msg.indexOf('Cannot set property fetch') !== -1 || msg.indexOf('requests.js') !== -1))) {
+            return true;
+          }
+          if (typeof prevOnError === 'function') {
+            return prevOnError.apply(this, arguments);
+          }
+        };
+      })();
+    </script>
+    <title>PromptShield — ShadowAI Leak Guard</title>
+    <meta name="description" content="Enterprise AI-usage monitoring and local sensitive-data DLP protection guardrail running 100% locally in-browser." />
+    <meta property="og:title" content="PromptShield — ShadowAI Leak Guard" />
+    <meta property="og:description" content="Enterprise AI-usage monitoring and local sensitive-data DLP protection guardrail running 100% locally in-browser." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

@@ -1,0 +1,6 @@
+{
+  "name": "PromptShield — ShadowAI Leak Guard",
+  "description": "Enterprise AI-usage monitoring and local sensitive-data DLP protection guardrail running 100% locally in-browser.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
