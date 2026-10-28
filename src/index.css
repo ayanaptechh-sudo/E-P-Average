@@ -40,3 +40,16 @@
 .dark ::-webkit-scrollbar-thumb:hover {
   background: #64748B;
 }
+
+/* Complete scrollbar-hide utility: permits mousewheel & trackpad scrolling with completely hidden scrollbar */
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none !important; /* IE and Edge */
+  scrollbar-width: none !important; /* Firefox */
+}
+

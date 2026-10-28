@@ -27,6 +27,8 @@ import {
   Minus,
   Square,
   X,
+  UserPlus,
+  Users,
 } from 'lucide-react';
 import { AuthProvider, useAuth } from './services/authContext';
 import { ThemeProvider, useTheme } from './services/themeContext';
@@ -37,7 +39,7 @@ import { ScanTextPage, ScanClipboardPage } from './ui/pages/ScanPages';
 import { FindingsPage, RiskAnalysisPage } from './ui/pages/RiskAndAlertPages';
 import { IncidentsPage } from './ui/pages/IncidentsPage';
 import { PolicyPage, ReportsPage } from './ui/pages/PolicyAndReportPages';
-import { SettingsPage } from './ui/pages/UsersAndSettingsPages';
+import { UsersPage, SettingsPage } from './ui/pages/UsersAndSettingsPages';
 import { toolRepo } from './database/repositories/toolRepo';
 import { scanRepo } from './database/repositories/scanRepo';
 import { policyRepo } from './database/repositories/policyRepo';
@@ -402,6 +404,7 @@ interface DashboardContentProps {
 }
 
 function DashboardContent({ onNavigate, searchQuery }: DashboardContentProps) {
+  const { currentUser } = useAuth();
   const [wheelTab, setWheelTab] = useState<'wheel' | 'activity'>('wheel');
 
   // Real data metrics queried from SQLite
@@ -410,7 +413,7 @@ function DashboardContent({ onNavigate, searchQuery }: DashboardContentProps) {
   const activeRuleCount = 13; // 13 Safe Regex AST scanning rules
 
   return (
-    <div className="flex-1 flex flex-col justify-between overflow-hidden gap-3 pb-1">
+    <div className="flex flex-col gap-3.5 pb-4">
       {/* =====================================================================
           HERO BANNER (Deep Teal/Emerald Gradient with 3D Shield)
          ===================================================================== */}
@@ -455,6 +458,19 @@ function DashboardContent({ onNavigate, searchQuery }: DashboardContentProps) {
               <ClipboardCheck className="w-3.5 h-3.5 text-teal-300" />
               <span>Audit Clipboard</span>
             </button>
+
+            {/* Conditionally rendered Manage Users button for Admin accounts only */}
+            {currentUser?.role === 'Administrator' && (
+              <button
+                type="button"
+                onClick={() => onNavigate('users')}
+                className="bg-teal-400/20 hover:bg-teal-400/30 text-teal-200 hover:text-white border border-teal-300/50 hover:border-teal-300 px-4.5 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer hover:scale-102 active:scale-98 shadow-sm backdrop-blur-xs"
+                title="Manage Users & Access Roles (Admin)"
+              >
+                <UserPlus className="w-3.5 h-3.5 text-teal-300" />
+                <span>Manage Users</span>
+              </button>
+            )}
 
             <div className="bg-teal-900/50 text-teal-300 border border-teal-500/20 rounded-full px-3.5 py-1.5 text-xs font-medium flex items-center gap-1.5 select-none">
               <Radio className="w-3 h-3 text-teal-400 animate-pulse" />
@@ -567,7 +583,7 @@ function DashboardContent({ onNavigate, searchQuery }: DashboardContentProps) {
       {/* =====================================================================
           BOTTOM ANALYTICS (Waveform Telemetry & Posture Wheel)
          ===================================================================== */}
-      <div className="flex-1 min-h-0 grid grid-cols-12 gap-3.5 overflow-hidden">
+      <div className="min-h-[220px] grid grid-cols-12 gap-3.5">
         {/* Left Column (8 cols): Chronological DLP Event Telemetry */}
         <div className="col-span-8 rounded-2xl p-4 flex flex-col justify-between overflow-hidden transition-colors bg-white dark:bg-[#131B26] border border-slate-200/80 dark:border-slate-800/80 shadow-xs dark:shadow-none">
           {/* Card Header with Legend */}
@@ -870,14 +886,14 @@ function MainLayout() {
             </div>
           </header>
 
-          {/* Main Body View */}
-          {currentPage === 'dashboard' ? (
-            <DashboardContent
-              onNavigate={(page) => setCurrentPage(page)}
-              searchQuery={searchQuery}
-            />
-          ) : (
-            <div className="flex-1 overflow-y-auto pr-1">
+          {/* Main Body View - Scrollable via mouse wheel/trackpad, zero visible scrollbar */}
+          <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar pr-0.5">
+            {currentPage === 'dashboard' ? (
+              <DashboardContent
+                onNavigate={(page) => setCurrentPage(page)}
+                searchQuery={searchQuery}
+              />
+            ) : (
               <div className="max-w-[1500px] w-full mx-auto select-text pb-6">
                 {currentPage === 'inventory' && <InventoryPage />}
                 {currentPage === 'scan-text' && <ScanTextPage />}
@@ -889,10 +905,11 @@ function MainLayout() {
                 {currentPage === 'incidents' && <IncidentsPage />}
                 {currentPage === 'policies' && <PolicyPage />}
                 {currentPage === 'reports' && <ReportsPage />}
+                {currentPage === 'users' && <UsersPage />}
                 {currentPage === 'settings' && <SettingsPage />}
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -161,17 +161,24 @@ export const UsersPage: React.FC = () => {
     },
     {
       header: 'Status',
-      accessor: (u) => (
-        <span
-          className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
-            u.status === 'Active'
-              ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/80'
-              : 'bg-rose-50 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border-rose-200 dark:border-rose-800/80'
-          }`}
-        >
-          {u.status}
-        </span>
-      ),
+      accessor: (u) => {
+        const s = (u.status || '').toLowerCase();
+        let badgeStyle = 'bg-gray-100 text-gray-700 border-gray-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700';
+        if (s === 'active') {
+          badgeStyle = 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/80';
+        } else if (s === 'suspended') {
+          badgeStyle = 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800/80';
+        } else if (s === 'banned') {
+          badgeStyle = 'bg-rose-50 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border-rose-200 dark:border-rose-800/80';
+        } else if (s === 'restricted') {
+          badgeStyle = 'bg-purple-50 dark:bg-purple-950/60 text-purple-800 dark:text-purple-300 border-purple-200 dark:border-purple-800/80';
+        }
+        return (
+          <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border capitalize ${badgeStyle}`}>
+            {u.status}
+          </span>
+        );
+      },
       sortable: true,
       sortValue: (u) => u.status,
     },
@@ -320,18 +327,35 @@ export const UsersPage: React.FC = () => {
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-slate-300">
-              Department
-            </label>
-            <input
-              type="text"
-              required
-              value={department}
-              onChange={(e) => setDepartment(e.target.value)}
-              placeholder="e.g. Engineering, SecOps, HR, Finance"
-              className="mt-1 w-full px-3.5 py-2 text-xs bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-gray-900 dark:text-slate-100 font-medium"
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-slate-300">
+                Department
+              </label>
+              <input
+                type="text"
+                required
+                value={department}
+                onChange={(e) => setDepartment(e.target.value)}
+                placeholder="e.g. Engineering, SecOps, HR, Finance"
+                className="mt-1 w-full px-3.5 py-2 text-xs bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-gray-900 dark:text-slate-100 font-medium"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-slate-300">
+                Account Status
+              </label>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value as UserStatus)}
+                className="mt-1 w-full px-3.5 py-2 text-xs bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:outline-none text-gray-900 dark:text-slate-100 font-semibold"
+              >
+                <option value="active">Active (Can Login)</option>
+                <option value="suspended">Suspended (Blocked)</option>
+                <option value="banned">Banned (Blocked)</option>
+                <option value="restricted">Restricted (Blocked)</option>
+              </select>
+            </div>
           </div>
 
           <div className="pt-3 flex justify-end gap-2 border-t border-gray-150 dark:border-slate-700">
@@ -360,7 +384,7 @@ export const UsersPage: React.FC = () => {
           setSelectedUser(null);
         }}
         title={`Edit User: ${selectedUser?.username}`}
-        subtitle="Modify user access tier, departmental assignment, or account active status."
+        subtitle="Modify user access tier, departmental assignment, or account status."
       >
         <form onSubmit={handleUpdateUser} className="space-y-4">
           <div>
@@ -398,12 +422,14 @@ export const UsersPage: React.FC = () => {
               Account Status
             </label>
             <select
-              value={status}
+              value={status.toLowerCase()}
               onChange={(e) => setStatus(e.target.value as UserStatus)}
               className="mt-1 w-full px-3.5 py-2 text-xs bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:outline-none text-gray-900 dark:text-slate-100 font-semibold"
             >
-              <option value="Active">Active</option>
-              <option value="Disabled">Disabled</option>
+              <option value="active">Active (Can Login)</option>
+              <option value="suspended">Suspended (Blocked)</option>
+              <option value="banned">Banned (Blocked)</option>
+              <option value="restricted">Restricted (Blocked)</option>
             </select>
           </div>
 

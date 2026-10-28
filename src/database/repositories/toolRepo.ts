@@ -13,6 +13,10 @@ export const toolRepo = {
     return query<AiTool>('SELECT * FROM ai_tools ORDER BY tool_name ASC');
   },
 
+  getApprovedTools(): AiTool[] {
+    return query<AiTool>("SELECT * FROM ai_tools WHERE approval_status = 'Approved' ORDER BY tool_name ASC");
+  },
+
   getById(toolId: string): AiTool | null {
     const rows = query<AiTool>('SELECT * FROM ai_tools WHERE tool_id = ?', [toolId]);
     return rows[0] || null;

@@ -16,12 +16,10 @@ export const LoginPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [showForgotNotice, setShowForgotNotice] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    setShowForgotNotice(false);
 
     if (!email.trim()) {
       setError('Please enter your email address.');
@@ -277,18 +275,6 @@ export const LoginPage: React.FC = () => {
             </motion.div>
           )}
 
-          {/* Forgot Password Notification */}
-          {showForgotNotice && (
-            <motion.div
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="mb-6 p-4 rounded-xl bg-purple-50 dark:bg-indigo-950/50 border border-purple-200 dark:border-indigo-900 text-purple-800 dark:text-indigo-300 text-xs leading-relaxed"
-            >
-              <div className="font-bold mb-0.5">Airgap Security Mode Active</div>
-              Password recovery tokens must be provisioned directly by your Security Administrator.
-            </motion.div>
-          )}
-
           {/* Login Form */}
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Email Field */}
@@ -297,7 +283,7 @@ export const LoginPage: React.FC = () => {
                 htmlFor="email-input"
                 className="block text-xs font-semibold text-gray-700 dark:text-slate-300 uppercase tracking-wider mb-2"
               >
-                Email
+                Email or Username
               </label>
               <input
                 id="email-input"
@@ -319,13 +305,6 @@ export const LoginPage: React.FC = () => {
                 >
                   Password
                 </label>
-                <button
-                  type="button"
-                  onClick={() => setShowForgotNotice(true)}
-                  className="text-xs font-medium text-[#5B4DFB] dark:text-indigo-400 hover:text-[#4A3EE0] transition-colors cursor-pointer"
-                >
-                  Forgot Password?
-                </button>
               </div>
 
               <div className="relative">
@@ -370,18 +349,12 @@ export const LoginPage: React.FC = () => {
               )}
             </button>
 
-            {/* Bottom Links */}
-            <div className="text-center pt-4">
-              <p className="text-xs text-gray-400 dark:text-slate-500">
-                Don't have an account?{' '}
-                <button
-                  type="button"
-                  onClick={() => setShowForgotNotice(true)}
-                  className="font-semibold text-[#5B4DFB] dark:text-indigo-400 hover:underline cursor-pointer"
-                >
-                  Sign Up
-                </button>
-              </p>
+            {/* Enterprise Admin Notice - No Sign Up or Password Reset Links */}
+            <div className="pt-4 border-t border-gray-150 dark:border-slate-800 text-center">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-50 dark:bg-slate-800/80 border border-gray-200/80 dark:border-slate-700/80 text-[11px] text-gray-600 dark:text-slate-400 font-medium">
+                <Lock className="w-3.5 h-3.5 text-gray-400 dark:text-slate-500 shrink-0" />
+                <span>Enterprise Access: User accounts are provisioned exclusively by an Administrator.</span>
+              </div>
             </div>
           </form>
         </div>

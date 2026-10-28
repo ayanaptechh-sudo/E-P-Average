@@ -22,7 +22,7 @@ export const DEFAULT_AI_CATALOG: SeededTool[] = [
     tool_type: 'Website',
     identifier: 'chatgpt.com',
     category: 'Generative Text & Assistant',
-    approval_status: 'Unreviewed',
+    approval_status: 'Approved',
     risk_policy: 'Standard DLP Guardrail',
   },
   {
@@ -31,7 +31,7 @@ export const DEFAULT_AI_CATALOG: SeededTool[] = [
     tool_type: 'Website',
     identifier: 'openai.com',
     category: 'AI Platform & API',
-    approval_status: 'Unreviewed',
+    approval_status: 'Approved',
     risk_policy: 'Standard DLP Guardrail',
   },
   {
@@ -40,7 +40,7 @@ export const DEFAULT_AI_CATALOG: SeededTool[] = [
     tool_type: 'Website',
     identifier: 'claude.ai',
     category: 'Generative Text & Reasoning',
-    approval_status: 'Unreviewed',
+    approval_status: 'Approved',
     risk_policy: 'Standard DLP Guardrail',
   },
   {
@@ -49,7 +49,7 @@ export const DEFAULT_AI_CATALOG: SeededTool[] = [
     tool_type: 'Website',
     identifier: 'gemini.google.com',
     category: 'Generative Multimodal Assistant',
-    approval_status: 'Unreviewed',
+    approval_status: 'Approved',
     risk_policy: 'Standard DLP Guardrail',
   },
   {
@@ -58,7 +58,7 @@ export const DEFAULT_AI_CATALOG: SeededTool[] = [
     tool_type: 'Website',
     identifier: 'copilot.microsoft.com',
     category: 'Enterprise AI Assistant',
-    approval_status: 'Unreviewed',
+    approval_status: 'Approved',
     risk_policy: 'Standard DLP Guardrail',
   },
   {

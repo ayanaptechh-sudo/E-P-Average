@@ -31,7 +31,8 @@ export const ScanTextPage: React.FC<{
   const [activeScanId, setActiveScanId] = useState<string>('');
   const [showRedactionView, setShowRedactionView] = useState(false);
 
-  const tools = useMemo(() => toolRepo.getAll(), []);
+  // Dynamically load only approved AI tools configured by Admin from SQLite
+  const approvedTools = useMemo(() => toolRepo.getApprovedTools(), []);
 
   // Update text if initialText changes (e.g. from clipboard scan)
   useEffect(() => {
@@ -166,25 +167,43 @@ export const ScanTextPage: React.FC<{
           </p>
         </div>
 
-        {/* Destination Tool Selector */}
-        <div className="flex items-center gap-2.5">
-          <label className="text-xs font-bold text-gray-700 dark:text-slate-300 uppercase tracking-wider whitespace-nowrap">
-            Target AI:
+        {/* Mandatory Destination Tool Selector (Approved Tools Only) */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+          <label className="text-xs font-bold text-gray-700 dark:text-slate-300 uppercase tracking-wider whitespace-nowrap flex items-center gap-1">
+            <span>Target AI</span>
+            <span className="text-rose-500 font-extrabold">*</span>
+            <span className="text-[10px] text-teal-600 dark:text-teal-400 font-semibold normal-case ml-1 bg-teal-50 dark:bg-teal-950/60 px-2 py-0.5 rounded-full border border-teal-200 dark:border-teal-800">
+              Admin Approved Only
+            </span>
           </label>
           <select
+            required
+            aria-required="true"
             value={targetToolId}
             onChange={(e) => setTargetToolId(e.target.value)}
-            className="px-3 py-2 text-xs bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-gray-900 dark:text-slate-100 font-semibold shadow-2xs"
+            className={`px-3 py-2 text-xs rounded-xl focus:outline-none focus:ring-2 font-semibold shadow-2xs transition-all ${
+              !targetToolId
+                ? 'bg-amber-50/70 dark:bg-amber-950/40 border-2 border-amber-400/80 dark:border-amber-600 text-amber-900 dark:text-amber-200 focus:ring-amber-500/30'
+                : 'bg-white dark:bg-slate-800 border border-teal-500/50 dark:border-teal-500 text-gray-900 dark:text-slate-100 focus:ring-teal-500/20'
+            }`}
           >
-            <option value="">Unspecified / General AI Tool</option>
-            {tools.map((t) => (
+            <option value="">-- Mandatory: Select Approved Target AI --</option>
+            {approvedTools.map((t) => (
               <option key={t.tool_id} value={t.tool_id}>
-                {t.tool_name} ({t.approval_status})
+                ✓ {t.tool_name} ({t.category})
               </option>
             ))}
           </select>
         </div>
       </div>
+
+      {approvedTools.length === 0 && (
+        <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs flex items-center justify-between">
+          <span>
+            <strong>Warning:</strong> No AI tools are currently set to "Approved" in the database. An Administrator must approve at least one AI tool in the Inventory before prompts can be scanned.
+          </span>
+        </div>
+      )}
 
       <PrivacyBanner />
 
@@ -217,13 +236,20 @@ export const ScanTextPage: React.FC<{
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder="Paste text, code snippets, database queries, configurations, or credentials here to scan for sensitive exposure..."
-              className="w-full p-4 font-mono text-xs bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl focus:outline-none focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 leading-relaxed transition-all"
+              className="w-full p-4 font-mono text-xs bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl focus:outline-none focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 leading-relaxed transition-all"
             />
 
             <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
-              <span className="text-[11px] text-gray-500 dark:text-slate-400 font-medium">
-                Luhn checksum filter for cards · Pakistani CNIC & National IDs · Known API keys & PEM · Password assignments
-              </span>
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] text-gray-500 dark:text-slate-400 font-medium">
+                  Luhn checksum filter for cards · National IDs · API keys & PEM certificates · Passwords
+                </span>
+                {!targetToolId && text.trim() && (
+                  <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 animate-pulse">
+                    ⚠️ Mandatory: You must select an approved Target AI above before scanning or submitting.
+                  </span>
+                )}
+              </div>
 
               <div className="flex flex-col items-end gap-1.5">
                 <div className="flex items-center gap-2">
@@ -238,12 +264,23 @@ export const ScanTextPage: React.FC<{
                   <button
                     type="button"
                     onClick={handleScan}
-                    disabled={!text.trim() || isScanning}
-                    className="px-5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-xs transition-colors disabled:opacity-50 flex items-center gap-2 cursor-pointer"
+                    disabled={!text.trim() || !targetToolId || isScanning}
+                    title={
+                      !targetToolId
+                        ? 'Select an approved Target AI from the dropdown above to enable scanning'
+                        : !text.trim()
+                        ? 'Enter text to scan'
+                        : 'Scan text locally against DLP policies'
+                    }
+                    className={`px-5 py-2 text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-2 ${
+                      !text.trim() || !targetToolId || isScanning
+                        ? 'bg-gray-300 dark:bg-slate-700 text-gray-500 dark:text-slate-400 cursor-not-allowed opacity-60'
+                        : 'bg-teal-600 hover:bg-teal-500 text-slate-950 font-extrabold shadow-md shadow-teal-500/20 cursor-pointer active:scale-98'
+                    }`}
                   >
                     {isScanning ? (
                       <>
-                        <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        <div className="w-3.5 h-3.5 border-2 border-slate-950/30 border-t-slate-950 rounded-full animate-spin" />
                         <span>Scanning Patterns...</span>
                       </>
                     ) : (
@@ -251,7 +288,9 @@ export const ScanTextPage: React.FC<{
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                         </svg>
-                        <span>Scan Text Locally</span>
+                        <span>
+                          {!targetToolId ? 'Select Target AI to Scan' : 'Scan / Submit Payload'}
+                        </span>
                       </>
                     )}
                   </button>

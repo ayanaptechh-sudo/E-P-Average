@@ -4,7 +4,7 @@
  */
 
 export type UserRole = 'Administrator' | 'Analyst' | 'Manager' | 'Auditor' | 'End User';
-export type UserStatus = 'Active' | 'Inactive';
+export type UserStatus = 'active' | 'suspended' | 'banned' | 'restricted' | 'Active' | 'Inactive' | 'Disabled';
 
 export interface AppUser {
   user_id: string;

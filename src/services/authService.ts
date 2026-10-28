@@ -165,16 +165,27 @@ export const authService = {
       throw new Error('Invalid username or password.');
     }
 
-    if (user.status !== 'Active') {
+    // Check user status: 'active', 'suspended', 'banned', 'restricted'
+    const normalizedStatus = (user.status || '').toLowerCase();
+    if (normalizedStatus !== 'active') {
       await auditRepo.log({
         user_id: user.user_id,
         action: 'LOGIN_BLOCKED',
         target_type: 'auth',
         target_id: user.user_id,
         outcome: 'Blocked',
-        details: `Login blocked for inactive user account "${cleanUser}".`,
+        details: `Login blocked for user "${cleanUser}" with account status "${user.status}".`,
       });
-      throw new Error('Your account is inactive. Please contact an Administrator.');
+
+      if (normalizedStatus === 'suspended') {
+        throw new Error('Account Suspended: Your access has been temporarily suspended by an Administrator.');
+      } else if (normalizedStatus === 'banned') {
+        throw new Error('Account Banned: Your account has been permanently banned due to security policy violations.');
+      } else if (normalizedStatus === 'restricted') {
+        throw new Error('Account Restricted: Your account is currently restricted. Please contact your Security Administrator.');
+      } else {
+        throw new Error(`Account Access Denied: User status is "${user.status}". Only active accounts are permitted to sign in.`);
+      }
     }
 
     const isValid = await verifyPassword(password, user.salt, user.password_hash);
