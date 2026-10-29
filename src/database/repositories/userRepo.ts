@@ -82,6 +82,27 @@ export const userRepo = {
     );
   },
 
+  async updateStatus(userId: string, status: UserStatus): Promise<void> {
+    await execute('UPDATE app_users SET status = ? WHERE user_id = ?', [status, userId]);
+  },
+
+  async insertOrReplace(user: AppUser): Promise<void> {
+    await execute(
+      `INSERT OR REPLACE INTO app_users (user_id, username, password_hash, salt, role, department, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        user.user_id,
+        user.username.trim(),
+        user.password_hash,
+        user.salt,
+        user.role,
+        user.department.trim(),
+        user.status,
+        user.created_at || new Date().toISOString(),
+      ]
+    );
+  },
+
   async delete(userId: string): Promise<void> {
     await execute('DELETE FROM app_users WHERE user_id = ?', [userId]);
   },

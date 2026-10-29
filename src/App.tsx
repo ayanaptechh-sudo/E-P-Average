@@ -674,7 +674,7 @@ function DashboardContent({ onNavigate, searchQuery }: DashboardContentProps) {
 // 6. MAIN APPLICATION LAYOUT (Fixed, No-Scroll, 1080p-Optimized)
 // ============================================================================
 function MainLayout() {
-  const { currentUser, isLoading, dbError, isFirstRun, logout, hasAccess, retryInit } = useAuth();
+  const { currentUser, isLoading, dbError, isFirstRun, logout, hasAccess, retryInit, isOnline } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [currentPage, setCurrentPage] = useState<PageId>('dashboard');
   const [searchQuery, setSearchQuery] = useState('');
@@ -863,6 +863,23 @@ function MainLayout() {
 
             {/* Right Status & Profile */}
             <div className="flex items-center gap-3">
+              {/* Online / Offline Sync Mode Pill */}
+              <div
+                className={`hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border select-none transition-colors ${
+                  isOnline
+                    ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-600/40 text-emerald-800 dark:text-emerald-300'
+                    : 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-600/40 text-amber-800 dark:text-amber-300'
+                }`}
+                title={
+                  isOnline
+                    ? 'Connected online. Supabase credential & status sync active.'
+                    : 'Offline Mode. Local sql.js SQLite in-memory database.'
+                }
+              >
+                <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-400 shadow-[0_0_6px_#34d399] animate-pulse' : 'bg-amber-400'}`} />
+                <span>{isOnline ? 'Supabase Sync' : 'Offline Cache'}</span>
+              </div>
+
               {/* Glowing 'DLP Guard Active' badge */}
               <div className="flex items-center gap-2 px-3.5 py-1 rounded-full text-xs font-semibold shadow-2xs transition-colors bg-teal-50 dark:bg-teal-950/40 border border-teal-300 dark:border-teal-500/40 text-teal-800 dark:text-teal-300 shadow-[0_0_12px_rgba(45,212,191,0.2)]">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse" />

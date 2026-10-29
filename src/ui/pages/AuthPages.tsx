@@ -5,12 +5,12 @@
 
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Shield, Eye, EyeOff, AlertCircle, Sparkles, Lock, ArrowRight, Check } from 'lucide-react';
+import { Shield, Eye, EyeOff, AlertCircle, Sparkles, Lock, ArrowRight, Check, Wifi, WifiOff } from 'lucide-react';
 import { useAuth } from '../../services/authContext';
 import { ThemeToggle } from '../components/ThemeToggle';
 
 export const LoginPage: React.FC = () => {
-  const { login, setupAdmin, isFirstRun } = useAuth();
+  const { login, setupAdmin, isFirstRun, isOnline, revocationMessage, clearRevocationMessage } = useAuth();
   const [email, setEmail] = useState('admin@promptshield.com');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -249,7 +249,32 @@ export const LoginPage: React.FC = () => {
           RIGHT SIDE: CLEAN MINIMAL LOGIN FORM (Dark/Light responsive)
          ========================================================================= */}
       <div className="md:w-1/2 bg-white dark:bg-slate-900 flex flex-col justify-center items-center p-8 sm:p-12 lg:p-20 relative">
-        <div className="absolute top-4 right-4">
+        <div className="absolute top-4 right-4 flex items-center gap-2">
+          {/* Online / Offline Sync Mode Indicator */}
+          <div
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold border transition-all select-none ${
+              isOnline
+                ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700/60 text-emerald-700 dark:text-emerald-300'
+                : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+            }`}
+            title={
+              isOnline
+                ? 'Online Mode: Credentials verified with Supabase and cached locally in sql.js'
+                : 'Offline Mode: Authenticating directly with local sql.js SQLite cache'
+            }
+          >
+            {isOnline ? (
+              <>
+                <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_#10B981] animate-pulse" />
+                <span>Online (Supabase Sync)</span>
+              </>
+            ) : (
+              <>
+                <WifiOff className="w-3 h-3 text-slate-400" />
+                <span>Offline (Local SQLite)</span>
+              </>
+            )}
+          </div>
           <ThemeToggle />
         </div>
         <div className="w-full max-w-md mx-auto">
@@ -262,6 +287,21 @@ export const LoginPage: React.FC = () => {
               Enter your email and password to login our dashboard.
             </p>
           </div>
+
+          {/* Session Revocation Warning Banner (Triggered when user is banned/kicked from Supabase) */}
+          {revocationMessage && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-6 p-4 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-xs flex items-start gap-3 shadow-xs"
+            >
+              <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+              <div className="flex-1 leading-relaxed">
+                <span className="font-bold block mb-0.5">Session Terminated</span>
+                {revocationMessage}
+              </div>
+            </motion.div>
+          )}
 
           {/* Error Banner */}
           {error && (

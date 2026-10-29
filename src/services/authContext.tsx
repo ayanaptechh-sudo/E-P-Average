@@ -4,18 +4,24 @@
  */
 
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
-import { AppUser, UserRole } from '../database/types';
+import { AppUser } from '../database/types';
 import { authService, PageId, ROLE_PERMISSIONS } from './authService';
 import { initDatabase } from '../database/db';
 import { settingsRepo } from '../database/repositories/reportRepo';
 import { policyRepo } from '../database/repositories/policyRepo';
+import { loginUser, initStatusSyncListener, AuthSource } from './authSync';
+import { isSupabaseConfigured, pushUserToSupabase } from './supabaseClient';
 
 interface AuthContextType {
   currentUser: AppUser | null;
   isLoading: boolean;
   dbError: string | null;
   isFirstRun: boolean;
-  login: (u: string, p: string) => Promise<void>;
+  isOnline: boolean;
+  authSource: AuthSource | null;
+  revocationMessage: string | null;
+  clearRevocationMessage: () => void;
+  login: (u: string, p: string) => Promise<{ authSource: AuthSource; message?: string }>;
   logout: () => Promise<void>;
   setupAdmin: (u: string, p: string, dept?: string) => Promise<void>;
   hasAccess: (pageId: PageId) => boolean;
@@ -30,9 +36,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(true);
   const [dbError, setDbError] = useState<string | null>(null);
   const [isFirstRun, setIsFirstRun] = useState(false);
+  const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [authSource, setAuthSource] = useState<AuthSource | null>(null);
+  const [revocationMessage, setRevocationMessage] = useState<string | null>(null);
   const [sessionTimeoutMinutes, setSessionTimeoutMinutes] = useState(30);
 
   const timeoutTimerRef = useRef<number | null>(null);
+  const currentUserRef = useRef<AppUser | null>(null);
+  currentUserRef.current = currentUser;
 
   const startDbInit = useCallback(async () => {
     setIsLoading(true);
@@ -65,6 +76,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     startDbInit();
   }, [startDbInit]);
 
+  // Real-time network & background status syncing
+  useEffect(() => {
+    const cleanup = initStatusSyncListener({
+      getCurrentUser: () => currentUserRef.current,
+      onUserBannedOrRevoked: (reason, status) => {
+        console.warn(`[AuthProvider] User session revoked in real-time due to remote status change (${status}):`, reason);
+        setRevocationMessage(reason);
+        setCurrentUser(null);
+        setAuthSource(null);
+      },
+      onNetworkChange: (online) => {
+        setIsOnline(online);
+      },
+    });
+
+    return cleanup;
+  }, []);
+
   const logout = useCallback(async () => {
     if (currentUser) {
       try {
@@ -74,6 +103,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
     setCurrentUser(null);
+    setAuthSource(null);
     if (timeoutTimerRef.current) {
       window.clearTimeout(timeoutTimerRef.current);
       timeoutTimerRef.current = null;
@@ -116,13 +146,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [currentUser, resetSessionTimer]);
 
-  const login = async (username: string, password: string) => {
-    const user = await authService.login(username, password);
-    setCurrentUser(user);
+  const login = async (username: string, password: string): Promise<{ authSource: AuthSource; message?: string }> => {
+    // Execute Offline-First / Local-First Login Flow
+    const result = await loginUser(username, password);
+    setCurrentUser(result.user);
+    setAuthSource(result.authSource);
+    setRevocationMessage(null);
+
     try {
       const timeoutStr = settingsRepo.get('session_timeout_minutes', '30');
       setSessionTimeoutMinutes(parseInt(timeoutStr, 10) || 30);
     } catch {}
+
+    return { authSource: result.authSource, message: result.message };
   };
 
   const setupAdmin = async (username: string, password: string, dept?: string) => {
@@ -133,6 +169,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
     setIsFirstRun(false);
     setCurrentUser(admin);
+    setAuthSource('offline_local_cache');
+
+    // Attempt to push initial admin to Supabase if configured and online
+    try {
+      if (navigator.onLine && isSupabaseConfigured()) {
+        pushUserToSupabase(admin).catch((err) => {
+          console.warn('[AuthProvider] Supabase initial admin sync deferred:', err);
+        });
+      }
+    } catch {}
+  };
+
+  const clearRevocationMessage = () => {
+    setRevocationMessage(null);
   };
 
   const hasAccess = (pageId: PageId): boolean => {
@@ -148,6 +198,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         dbError,
         isFirstRun,
+        isOnline,
+        authSource,
+        revocationMessage,
+        clearRevocationMessage,
         login,
         logout,
         setupAdmin,
