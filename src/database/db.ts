@@ -378,6 +378,36 @@ function createSchema(db: Database) {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS enrolled_endpoints (
+      endpoint_id TEXT PRIMARY KEY,
+      hostname TEXT NOT NULL,
+      os_type TEXT NOT NULL,
+      os_version TEXT NOT NULL,
+      ip_address TEXT NOT NULL,
+      network_range TEXT,
+      health_score INTEGER NOT NULL DEFAULT 85,
+      status TEXT NOT NULL DEFAULT 'Active',
+      agent_version TEXT NOT NULL DEFAULT '2.4.0-dlp',
+      auth_token TEXT NOT NULL,
+      enrolled_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS endpoint_telemetry (
+      telemetry_id TEXT PRIMARY KEY,
+      endpoint_id TEXT NOT NULL,
+      hostname TEXT NOT NULL,
+      user_account TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      ai_tool TEXT NOT NULL,
+      violation_category TEXT NOT NULL,
+      action_taken TEXT NOT NULL,
+      details TEXT NOT NULL,
+      timestamp TEXT NOT NULL,
+      alert_displayed INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (endpoint_id) REFERENCES enrolled_endpoints(endpoint_id) ON DELETE CASCADE
+    );
+
     -- Performance Indexes
     CREATE INDEX IF NOT EXISTS idx_usage_events_time ON usage_events(event_time);
     CREATE INDEX IF NOT EXISTS idx_usage_events_tool ON usage_events(tool_id);
@@ -389,6 +419,9 @@ function createSchema(db: Database) {
     CREATE INDEX IF NOT EXISTS idx_alerts_severity ON alerts(severity);
     CREATE INDEX IF NOT EXISTS idx_incidents_number ON incidents(incident_number);
     CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp);
+    CREATE INDEX IF NOT EXISTS idx_endpoints_hostname ON enrolled_endpoints(hostname);
+    CREATE INDEX IF NOT EXISTS idx_telemetry_endpoint ON endpoint_telemetry(endpoint_id);
+    CREATE INDEX IF NOT EXISTS idx_telemetry_time ON endpoint_telemetry(timestamp);
   `);
 }
 
@@ -427,6 +460,17 @@ export function query<T>(sql: string, params: (string | number | null | boolean 
   } finally {
     stmt.free();
   }
+}
+
+/**
+ * Synchronously run statement without immediately persisting to IndexedDB
+ */
+export function run(
+  sql: string,
+  params: (string | number | null | boolean | Uint8Array)[] = []
+): void {
+  if (!dbInstance) throw new Error('Database not initialized');
+  dbInstance.run(sql, params as (string | number | null)[]);
 }
 
 /**

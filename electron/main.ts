@@ -7,6 +7,8 @@
 
 import { app, BrowserWindow, clipboard, Notification, ipcMain } from 'electron';
 import * as path from 'path';
+import * as http from 'http';
+import * as fs from 'fs';
 
 // ============================================================================
 // 1. CONFIGURATION & SENSITIVE DATA PATTERNS
@@ -280,12 +282,134 @@ function createMainWindow(): BrowserWindow {
 }
 
 // ============================================================================
-// 4. APP LIFECYCLE & IPC REGISTRATION
+// 4. LOCAL HTTP TELEMETRY SERVER (Port 8000)
+// ============================================================================
+
+let localHttpServer: http.Server | null = null;
+const LOCAL_SERVER_PORT = 8000;
+
+function startLocalTelemetryServer() {
+  if (localHttpServer) return;
+
+  localHttpServer = http.createServer((req, res) => {
+    // Set permissive CORS headers for LAN communication
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
+    const url = req.url || '';
+
+    // Route 1: Serve PowerShell Agent Script
+    if (req.method === 'GET' && url.startsWith('/agent/install.ps1')) {
+      const psPath = path.join(__dirname, '../public/agent/install.ps1');
+      if (fs.existsSync(psPath)) {
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+        fs.createReadStream(psPath).pipe(res);
+      } else {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Agent script not found');
+      }
+      return;
+    }
+
+    // Route 2: Serve POSIX Bash Agent Script
+    if (req.method === 'GET' && url.startsWith('/agent/install.sh')) {
+      const shPath = path.join(__dirname, '../public/agent/install.sh');
+      if (fs.existsSync(shPath)) {
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+        fs.createReadStream(shPath).pipe(res);
+      } else {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Agent script not found');
+      }
+      return;
+    }
+
+    // Route 3: Endpoint Telemetry Ingestion
+    if (req.method === 'POST' && url === '/api/endpoints/telemetry') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const telemetryData = JSON.parse(body || '{}');
+          // Forward telemetry event to renderer window via IPC
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('telemetry-received', telemetryData);
+          }
+
+          // Trigger OS Notification if an alert violation occurred
+          if (telemetryData.event_type === 'CLIPBOARD_DLP_BLOCKED' || telemetryData.event_type === 'AI_PROMPT_INTERCEPTED') {
+            if (Notification.isSupported()) {
+              new Notification({
+                title: 'PromptShield Alert • ' + (telemetryData.hostname || 'Endpoint Host'),
+                body: `Blocked ${telemetryData.violation_category || 'sensitive data'} transfer to AI tool.`,
+                urgency: 'critical',
+              }).show();
+            }
+          }
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'success', message: 'Telemetry received' }));
+        } catch {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Invalid JSON payload' }));
+        }
+      });
+      return;
+    }
+
+    // Route 4: Health Check
+    if (req.method === 'GET' && (url === '/api/health' || url === '/')) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        status: 'online',
+        service: 'PromptShield Local EDR Server',
+        port: LOCAL_SERVER_PORT,
+        timestamp: new Date().toISOString(),
+      }));
+      return;
+    }
+
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Endpoint not found' }));
+  });
+
+  localHttpServer.on('error', (err: any) => {
+    if (err.code === 'EADDRINUSE') {
+      console.warn(`Local telemetry server port ${LOCAL_SERVER_PORT} in use, continuing gracefully.`);
+    } else {
+      console.error('Local telemetry server error:', err);
+    }
+  });
+
+  localHttpServer.listen(LOCAL_SERVER_PORT, '0.0.0.0', () => {
+    console.log(`PromptShield Local Telemetry Server active at http://0.0.0.0:${LOCAL_SERVER_PORT}`);
+  });
+}
+
+function stopLocalTelemetryServer() {
+  if (localHttpServer) {
+    try {
+      localHttpServer.close();
+    } catch {}
+    localHttpServer = null;
+  }
+}
+
+// ============================================================================
+// 5. APP LIFECYCLE & IPC REGISTRATION
 // ============================================================================
 
 app.whenReady().then(() => {
   createMainWindow();
   startClipboardDaemon();
+  startLocalTelemetryServer();
 
   // IPC Handlers for UI queries
   ipcMain.handle('get-daemon-status', () => ({
@@ -318,4 +442,5 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   stopClipboardDaemon();
+  stopLocalTelemetryServer();
 });

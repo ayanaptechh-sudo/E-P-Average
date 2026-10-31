@@ -211,3 +211,42 @@ export interface AppSetting {
   value: string;
   updated_at: string;
 }
+
+export type EndpointOs = 'Windows' | 'Linux' | 'macOS';
+export type EndpointStatus = 'Active' | 'Auditing' | 'Warning' | 'Offline';
+
+export interface EnrolledEndpoint {
+  endpoint_id: string;
+  hostname: string;
+  os_type: EndpointOs;
+  os_version: string;
+  ip_address: string;
+  network_range: string | null;
+  health_score: number; // 0 - 100
+  status: EndpointStatus;
+  agent_version: string;
+  auth_token: string;
+  enrolled_at: string;
+  last_seen_at: string;
+}
+
+export type EndpointTelemetryEvent = 
+  | 'CLIPBOARD_DLP_BLOCKED' 
+  | 'AI_PROMPT_INTERCEPTED' 
+  | 'HEARTBEAT' 
+  | 'AUDIT_RUN'
+  | 'POLICY_VIOLATION';
+
+export interface EndpointTelemetry {
+  telemetry_id: string;
+  endpoint_id: string;
+  hostname: string;
+  user_account: string;
+  event_type: EndpointTelemetryEvent;
+  ai_tool: string;
+  violation_category: string;
+  action_taken: string;
+  details: string;
+  timestamp: string;
+  alert_displayed: number; // 1 or 0
+}

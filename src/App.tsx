@@ -24,11 +24,10 @@ import {
   Fingerprint,
   Zap,
   Radio,
-  Minus,
-  Square,
-  X,
   UserPlus,
   Users,
+  Laptop,
+  CheckCircle,
 } from 'lucide-react';
 import { AuthProvider, useAuth } from './services/authContext';
 import { ThemeProvider, useTheme } from './services/themeContext';
@@ -44,6 +43,7 @@ import { toolRepo } from './database/repositories/toolRepo';
 import { scanRepo } from './database/repositories/scanRepo';
 import { policyRepo } from './database/repositories/policyRepo';
 import { getActiveScannerRules } from './scanner/scannerEngine';
+import { EnrollHostModal, NewDevicePayload } from './ui/components/EnrollHostModal';
 
 // ============================================================================
 // 1. 3D METALLIC SHIELD MEDALLION (High-Fidelity SVG Graphic)
@@ -398,6 +398,28 @@ const NAV_ITEMS: NavItem[] = [
 // ============================================================================
 // 5. MAIN DASHBOARD CONTENT COMPONENT
 // ============================================================================
+// 5. MAIN DASHBOARD CONTENT COMPONENT
+// ============================================================================
+interface DeviceItem {
+  id: string;
+  name: string;
+  os: string;
+  ip: string;
+  status: 'Active' | 'Pending';
+  enrolledAt: string;
+}
+
+const INITIAL_DEVICES: DeviceItem[] = [
+  {
+    id: 'dev_finance_07',
+    name: 'FINANCE-LAPTOP-07',
+    os: 'Windows 11 (10.0.22631)',
+    ip: '192.168.1.107',
+    status: 'Active',
+    enrolledAt: 'Synchronized',
+  },
+];
+
 interface DashboardContentProps {
   onNavigate: (page: PageId) => void;
   searchQuery: string;
@@ -406,16 +428,31 @@ interface DashboardContentProps {
 function DashboardContent({ onNavigate, searchQuery }: DashboardContentProps) {
   const { currentUser } = useAuth();
   const [wheelTab, setWheelTab] = useState<'wheel' | 'activity'>('wheel');
+  const [showEnrollModal, setShowEnrollModal] = useState(false);
+  const [devices, setDevices] = useState<DeviceItem[]>(INITIAL_DEVICES);
 
   // Real data metrics queried from SQLite
   const toolCount = 20; // Default curated AI tools in inventory catalog
   const piiLeakCount = '00'; // Default 0 leaks detected
   const activeRuleCount = 13; // 13 Safe Regex AST scanning rules
 
+  const handleEnrollComplete = (payload: NewDevicePayload) => {
+    const newDevice: DeviceItem = {
+      id: `dev_${Date.now()}`,
+      name: payload.name || 'NEW-ENDPOINT',
+      os: 'OS Unknown',
+      ip: 'Awaiting connection...',
+      status: 'Pending',
+      enrolledAt: 'Waiting for deployment',
+    };
+
+    setDevices((prev) => [newDevice, ...prev]);
+  };
+
   return (
     <div className="flex flex-col gap-3.5 pb-4">
       {/* =====================================================================
-          HERO BANNER (Deep Teal/Emerald Gradient with 3D Shield)
+          HERO BANNER
          ===================================================================== */}
       <div className="shrink-0 rounded-[28px] p-5 md:py-5 md:px-6 relative overflow-hidden flex items-center justify-between shadow-lg bg-gradient-to-r from-[#013832] via-[#044A41] to-[#012622] dark:from-[#013832] dark:via-[#044A41] dark:to-[#012622] border border-teal-500/20 text-white">
         {/* Subtle background glow */}
@@ -423,65 +460,157 @@ function DashboardContent({ onNavigate, searchQuery }: DashboardContentProps) {
 
         {/* Left Column: Greeting & Actions */}
         <div className="relative z-10 max-w-xl">
-          {/* Status Chip */}
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-950/60 border border-teal-400/30 text-teal-300 text-xs font-medium mb-2 shadow-xs">
-            <Shield className="w-3.5 h-3.5 text-teal-400" />
-            <span>PromptShield Core • Local DLP Active</span>
-          </div>
-
           {/* Heading */}
           <h1 className="text-3xl font-extrabold text-white tracking-tight">
-            Hello admin!
+            Welcome, {currentUser?.username || 'admin'}
           </h1>
 
           {/* Subtitle */}
           <p className="text-teal-100/80 text-xs md:text-sm mt-1 font-normal">
-            Continuous Data Loss Prevention active. Real-time clipboard and prompt scanning enabled.
+            Continuous cybersecurity auditing active. {devices.length} endpoints synchronized with realtime baseline.
           </p>
 
           {/* Action Row */}
           <div className="mt-4 flex items-center gap-3 flex-wrap">
+            {/* Primary Orange Action: + Enroll Host */}
+            <button
+              type="button"
+              onClick={() => setShowEnrollModal(true)}
+              className="bg-[#EA580C] hover:bg-[#D94F04] text-white font-bold px-5 py-2 rounded-full text-xs shadow-lg shadow-orange-600/30 transition-all flex items-center gap-1.5 cursor-pointer hover:scale-102 active:scale-98"
+              title="Install and enroll an endpoint agent"
+            >
+              <Zap className="w-3.5 h-3.5 fill-white" />
+              <span>+ Enroll Host</span>
+            </button>
+
+            {/* Agent scan: Managed pill */}
+            <div className="bg-white/10 text-white/90 border border-white/20 rounded-full px-4 py-2 text-xs font-medium flex items-center gap-1.5 select-none">
+              <Clock className="w-3.5 h-3.5 text-teal-300" />
+              <span>Agent scan: Managed</span>
+            </div>
+
             <button
               type="button"
               onClick={() => onNavigate('scan-text')}
-              className="bg-[#1FD8C2] hover:bg-[#18C3AF] text-slate-950 font-bold px-4.5 py-2 rounded-full text-xs shadow-lg shadow-teal-500/25 transition-all flex items-center gap-1.5 cursor-pointer hover:scale-102 active:scale-98"
+              className="bg-[#1FD8C2] hover:bg-[#18C3AF] text-slate-950 font-bold px-4 py-2 rounded-full text-xs shadow-md shadow-teal-500/25 transition-all flex items-center gap-1.5 cursor-pointer hover:scale-102 active:scale-98"
             >
-              <Zap className="w-3.5 h-3.5 fill-slate-950" />
+              <Shield className="w-3.5 h-3.5" />
               <span>Launch Scanner</span>
             </button>
 
             <button
               type="button"
               onClick={() => onNavigate('scan-clipboard')}
-              className="bg-transparent hover:bg-white/10 text-white font-medium border border-teal-300/40 px-4.5 py-2 rounded-full text-xs transition-all flex items-center gap-1.5 cursor-pointer hover:scale-102 active:scale-98"
+              className="bg-transparent hover:bg-white/10 text-white font-medium border border-teal-300/40 px-4 py-2 rounded-full text-xs transition-all flex items-center gap-1.5 cursor-pointer hover:scale-102 active:scale-98"
             >
               <ClipboardCheck className="w-3.5 h-3.5 text-teal-300" />
               <span>Audit Clipboard</span>
             </button>
 
-            {/* Conditionally rendered Manage Users button for Admin accounts only */}
             {currentUser?.role === 'Administrator' && (
               <button
                 type="button"
                 onClick={() => onNavigate('users')}
-                className="bg-teal-400/20 hover:bg-teal-400/30 text-teal-200 hover:text-white border border-teal-300/50 hover:border-teal-300 px-4.5 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer hover:scale-102 active:scale-98 shadow-sm backdrop-blur-xs"
+                className="bg-teal-400/20 hover:bg-teal-400/30 text-teal-200 hover:text-white border border-teal-300/50 hover:border-teal-300 px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer hover:scale-102 active:scale-98 shadow-sm backdrop-blur-xs"
                 title="Manage Users & Access Roles (Admin)"
               >
                 <UserPlus className="w-3.5 h-3.5 text-teal-300" />
                 <span>Manage Users</span>
               </button>
             )}
-
-            <div className="bg-teal-900/50 text-teal-300 border border-teal-500/20 rounded-full px-3.5 py-1.5 text-xs font-medium flex items-center gap-1.5 select-none">
-              <Radio className="w-3 h-3 text-teal-400 animate-pulse" />
-              <span>Guard Daemon: Online</span>
-            </div>
           </div>
         </div>
 
         {/* Right Column: 3D Metallic Shield Medallion */}
         <ShieldMedallion />
       </div>
+
+      {/* =====================================================================
+          DEVICE LIST SECTION (Clean, Focused, Exactly 1 Active Initially,
+          and Newly Added Devices Display with Pending Badge)
+         ===================================================================== */}
+      <div className="rounded-2xl p-5 bg-white dark:bg-[#131B26] border border-slate-200/80 dark:border-slate-800/80 shadow-xs flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Laptop className="w-4 h-4 text-[#EA580C]" />
+            <h2 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider font-mono">
+              Enrolled Endpoint Devices ({devices.length})
+            </h2>
+          </div>
+          <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+            {devices.filter((d) => d.status === 'Active').length} Active • {devices.filter((d) => d.status === 'Pending').length} Pending
+          </span>
+        </div>
+
+        <div className="flex flex-col gap-2.5">
+          {devices.map((device) => (
+            <div
+              key={device.id}
+              className="p-4 rounded-xl transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 dark:bg-[#101620] border border-slate-200/70 dark:border-slate-800/70"
+            >
+              <div className="flex items-center gap-3.5">
+                <div
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                    device.status === 'Active'
+                      ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40'
+                      : 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/40'
+                  }`}
+                >
+                  <Laptop className="w-5 h-5" />
+                </div>
+
+                <div>
+                  <div className="flex items-center gap-2.5">
+                    <h3 className="text-sm font-bold font-mono text-slate-900 dark:text-white">
+                      {device.name}
+                    </h3>
+
+                    {device.status === 'Active' ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700/50">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        Active
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700/50">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
+                        Pending
+                      </span>
+                    )}
+                  </div>
+
+                  <p className="text-xs text-slate-500 dark:text-slate-400 font-mono mt-0.5">
+                    {device.status === 'Pending'
+                      ? 'OS Unknown • Awaiting connection...'
+                      : `${device.os} • ${device.ip}`}
+                  </p>
+                </div>
+              </div>
+
+              {/* Status explanation */}
+              <div className="flex items-center sm:text-right">
+                {device.status === 'Active' ? (
+                  <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                    <CheckCircle className="w-4 h-4 text-emerald-500" />
+                    <span>Continuous DLP Active • Agent Synchronized</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-3 py-1.5 rounded-lg border border-amber-200 dark:border-amber-800/50 font-medium">
+                    <Clock className="w-3.5 h-3.5 text-amber-500 animate-spin" />
+                    <span>Waiting for command execution on target PC</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Modal: Enroll Endpoint Agent (Step 1 -> Step 2 -> Done) */}
+      <EnrollHostModal
+        isOpen={showEnrollModal}
+        onClose={() => setShowEnrollModal(false)}
+        onEnrollComplete={handleEnrollComplete}
+      />
 
       {/* =====================================================================
           4 METRIC CARDS (Grouped Compact Row)
@@ -744,28 +873,9 @@ function MainLayout() {
   return (
     <div className="h-screen w-screen overflow-hidden flex flex-col bg-[#EDF2F7] dark:bg-[#0B1017] text-slate-800 dark:text-slate-100 select-none font-sans antialiased">
       {/* =====================================================================
-          TOP WINDOW TITLE BAR (Desktop Client Aesthetics)
+          MAIN WORKSPACE BODY (Uses native Electron OS window frame)
          ===================================================================== */}
-      <div className="h-7 shrink-0 px-3 flex items-center justify-between text-xs font-medium text-slate-600 dark:text-slate-400 border-b border-slate-300/40 dark:border-slate-800/40 bg-slate-200/50 dark:bg-slate-900/40 select-none">
-        <div className="flex items-center gap-1.5">
-          <Shield className="w-3.5 h-3.5 text-teal-500 dark:text-teal-400" />
-          <span className="font-semibold text-slate-800 dark:text-slate-200">PromptShield v2.4.0</span>
-          <span className="text-slate-400 dark:text-slate-500">•</span>
-          <span className="text-slate-600 dark:text-slate-400">Local DLP</span>
-        </div>
-
-        {/* Window Controls */}
-        <div className="flex items-center gap-3 text-slate-500 dark:text-slate-400">
-          <Minus className="w-3.5 h-3.5 hover:text-slate-900 dark:hover:text-white cursor-pointer transition-colors" />
-          <Square className="w-3 h-3 hover:text-slate-900 dark:hover:text-white cursor-pointer transition-colors" />
-          <X className="w-3.5 h-3.5 hover:text-rose-500 cursor-pointer transition-colors" />
-        </div>
-      </div>
-
-      {/* =====================================================================
-          MAIN WORKSPACE BODY
-         ===================================================================== */}
-      <div className="flex-1 h-[calc(100vh-28px)] flex p-3 gap-3.5 overflow-hidden">
+      <div className="flex-1 h-full flex p-3 gap-3.5 overflow-hidden">
         {/* ===================================================================
             1. THE FLOATING CAPSULE SIDEBAR (CRITICAL: Fixed, Non-Scrollable)
            =================================================================== */}
@@ -856,7 +966,7 @@ function MainLayout() {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search tools, intercepted prompts, risk rules, or findings..."
+                placeholder="Search hosts, threats, CVEs or fleet telemetry..."
                 className="w-full pl-9 pr-4 py-1.5 rounded-full text-xs font-normal transition-all outline-none bg-slate-200/70 dark:bg-[#131B26] border border-slate-300/60 dark:border-slate-800/80 text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/30"
               />
             </div>
