@@ -9,6 +9,31 @@ import { app, BrowserWindow, clipboard, Notification, ipcMain } from 'electron';
 import * as path from 'path';
 import * as http from 'http';
 import * as fs from 'fs';
+import { fileURLToPath } from 'url';
+
+// ESM path resolution polyfill
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// ============================================================================
+// 0. GLOBAL PROCESS ERROR & CRASH HANDLERS (Terminal Visibility)
+// ============================================================================
+
+process.on('uncaughtException', (error: any) => {
+  console.error('\n================ [PromptShield] UNCAUGHT EXCEPTION ================');
+  console.error('Message:', error?.message || error);
+  if (error?.stack) {
+    console.error('Stack:\n', error.stack);
+  }
+  console.error('==================================================================\n');
+});
+
+process.on('unhandledRejection', (reason: any, promise: any) => {
+  console.error('\n================ [PromptShield] UNHANDLED REJECTION ===============');
+  console.error('Promise:', promise);
+  console.error('Reason:', reason);
+  console.error('==================================================================\n');
+});
 
 // ============================================================================
 // 1. CONFIGURATION & SENSITIVE DATA PATTERNS
@@ -149,14 +174,15 @@ export function triggerOsAlert(patternName: string, category: string): void {
  * Returns the first matched sensitive pattern, or null if text is clean.
  */
 export function checkSensitivePatterns(text: string): SensitivePattern | null {
-  if (!text || text.length === 0) return null;
-  
-  // Fast length pre-filter: skip strings shorter than minimum token length
-  if (text.length < 10) return null;
+  if (!text || typeof text !== 'string') return null;
 
   for (const pattern of SENSITIVE_PATTERNS) {
-    if (pattern.regex.test(text)) {
-      return pattern;
+    try {
+      if (pattern.regex.test(text)) {
+        return pattern;
+      }
+    } catch (err) {
+      console.error(`[PromptShield Daemon] Error evaluating regex rule "${pattern.id}":`, err);
     }
   }
 
@@ -169,7 +195,8 @@ export function checkSensitivePatterns(text: string): SensitivePattern | null {
  */
 export function monitorClipboardTick(): void {
   try {
-    const currentText = clipboard.readText();
+    const rawText = (typeof clipboard?.readText === 'function' ? clipboard.readText() : '') as unknown;
+    const currentText = typeof rawText === 'string' ? rawText : '';
 
     // Skip if empty, identical to last scanned text, or already sanitized
     if (!currentText || currentText === lastScannedText || currentText === BLOCKED_CLIPBOARD_TEXT) {
@@ -183,7 +210,11 @@ export function monitorClipboardTick(): void {
 
     if (match) {
       // 1. Instantly overwrite the system clipboard
-      clipboard.writeText(BLOCKED_CLIPBOARD_TEXT);
+      try {
+        clipboard.writeText(BLOCKED_CLIPBOARD_TEXT);
+      } catch (clipErr) {
+        console.error('[PromptShield Daemon] Failed to write blocked text to clipboard:', clipErr);
+      }
       lastScannedText = BLOCKED_CLIPBOARD_TEXT;
       totalBlockedEventsCount++;
 
@@ -214,19 +245,24 @@ export function monitorClipboardTick(): void {
  * Starts the continuous background clipboard monitor.
  */
 export function startClipboardDaemon(): void {
-  if (clipboardMonitorInterval) {
-    clearInterval(clipboardMonitorInterval);
-  }
-
-  // Seed lastScannedText with current clipboard content to avoid false trigger on start
   try {
-    lastScannedText = clipboard.readText() || '';
-  } catch {
-    lastScannedText = '';
-  }
+    if (clipboardMonitorInterval) {
+      clearInterval(clipboardMonitorInterval);
+    }
 
-  clipboardMonitorInterval = setInterval(monitorClipboardTick, CLIPBOARD_CHECK_INTERVAL_MS);
-  console.log('[PromptShield Daemon] Background clipboard monitor daemon started (polling every 1000ms).');
+    // Seed lastScannedText with current clipboard content to avoid false trigger on start
+    try {
+      const raw = (typeof clipboard?.readText === 'function' ? clipboard.readText() : '') as unknown;
+      lastScannedText = typeof raw === 'string' ? raw : '';
+    } catch {
+      lastScannedText = '';
+    }
+
+    clipboardMonitorInterval = setInterval(monitorClipboardTick, CLIPBOARD_CHECK_INTERVAL_MS);
+    console.log('[PromptShield Daemon] Background clipboard monitor daemon started (polling every 1000ms).');
+  } catch (err) {
+    console.error('[PromptShield Daemon] Failed to initialize clipboard monitor daemon:', err);
+  }
 }
 
 /**
@@ -244,41 +280,61 @@ export function stopClipboardDaemon(): void {
 // 3. ELECTRON BROWSER WINDOW INITIALIZATION & SECURITY
 // ============================================================================
 
-function createMainWindow(): BrowserWindow {
-  mainWindow = new BrowserWindow({
-    width: 1366,
-    height: 880,
-    minWidth: 1080,
-    minHeight: 720,
-    title: 'PromptShield v2.4.0 • Local DLP',
-    backgroundColor: '#0B1017',
-    show: false,
-    webPreferences: {
-      nodeIntegration: false, // Security: Prevent renderer from executing native Node
-      contextIsolation: true,  // Security: Protect against prototype pollution
-      sandbox: true,           // Security: Run renderer inside Chromium sandbox
-      webSecurity: true,
-      allowRunningInsecureContent: false,
-    },
-  });
+function createMainWindow(): BrowserWindow | null {
+  try {
+    mainWindow = new BrowserWindow({
+      width: 1366,
+      height: 880,
+      minWidth: 1080,
+      minHeight: 720,
+      title: 'PromptShield v2.4.0 • Local DLP',
+      backgroundColor: '#0B1017',
+      show: false,
+      webPreferences: {
+        nodeIntegration: false, // Security: Prevent renderer from executing native Node
+        contextIsolation: true,  // Security: Protect against prototype pollution
+        sandbox: true,           // Security: Run renderer inside Chromium sandbox
+        webSecurity: true,
+        allowRunningInsecureContent: false,
+      },
+    });
 
-  mainWindow.once('ready-to-show', () => {
-    mainWindow?.show();
-  });
+    mainWindow.once('ready-to-show', () => {
+      mainWindow?.show();
+      console.log('[PromptShield Main Process] Main window shown.');
+    });
 
-  // Load UI from dev server or production index.html
-  const devServerUrl = process.env.VITE_DEV_SERVER_URL || process.env.ELECTRON_START_URL;
-  if (devServerUrl) {
-    mainWindow.loadURL(devServerUrl);
-  } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    // Load UI from dev server or production index.html
+    const devServerUrl = process.env.VITE_DEV_SERVER_URL || process.env.ELECTRON_START_URL || 'http://localhost:3000';
+    if (process.env.NODE_ENV === 'development' || process.env.VITE_DEV_SERVER_URL) {
+      console.log(`[PromptShield Main Process] Connecting window to dev server: ${devServerUrl}`);
+      mainWindow.loadURL(devServerUrl).catch((err) => {
+        console.error(`[PromptShield Main Process] Failed to load URL ${devServerUrl}:`, err);
+      });
+    } else {
+      const prodPath = path.join(__dirname, '../dist/index.html');
+      console.log(`[PromptShield Main Process] Loading production bundle: ${prodPath}`);
+      if (fs.existsSync(prodPath)) {
+        mainWindow.loadFile(prodPath).catch((err) => {
+          console.error(`[PromptShield Main Process] Failed to load production file ${prodPath}:`, err);
+        });
+      } else {
+        console.warn(`[PromptShield Main Process] dist/index.html not found, falling back to ${devServerUrl}`);
+        mainWindow.loadURL(devServerUrl).catch((err) => {
+          console.error(`[PromptShield Main Process] Fallback URL failed to load:`, err);
+        });
+      }
+    }
+
+    mainWindow.on('closed', () => {
+      mainWindow = null;
+    });
+
+    return mainWindow;
+  } catch (err) {
+    console.error('[PromptShield Main Process] CRITICAL ERROR creating main window:', err);
+    return null;
   }
-
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-  });
-
-  return mainWindow;
 }
 
 // ============================================================================
@@ -286,153 +342,198 @@ function createMainWindow(): BrowserWindow {
 // ============================================================================
 
 let localHttpServer: http.Server | null = null;
-const LOCAL_SERVER_PORT = 8000;
+export const LOCAL_SERVER_PORT = 8000;
 
-function startLocalTelemetryServer() {
-  if (localHttpServer) return;
+export function startLocalTelemetryServer(): http.Server | null {
+  if (localHttpServer) {
+    console.log(`[PromptShield Server] Port ${LOCAL_SERVER_PORT} server already instantiated.`);
+    return localHttpServer;
+  }
 
-  localHttpServer = http.createServer((req, res) => {
-    // Set permissive CORS headers for LAN communication
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  console.log(`[PromptShield Server] Starting local HTTP server on 0.0.0.0:${LOCAL_SERVER_PORT}...`);
 
-    if (req.method === 'OPTIONS') {
-      res.writeHead(204);
-      res.end();
-      return;
-    }
+  try {
+    localHttpServer = http.createServer((req, res) => {
+      // Set permissive CORS headers for LAN communication
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
-    const url = req.url || '';
-
-    // Route 1: Serve PowerShell Agent Script
-    if (req.method === 'GET' && url.startsWith('/agent/install.ps1')) {
-      const psPath = path.join(__dirname, '../public/agent/install.ps1');
-      if (fs.existsSync(psPath)) {
-        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-        fs.createReadStream(psPath).pipe(res);
-      } else {
-        res.writeHead(404, { 'Content-Type': 'text/plain' });
-        res.end('Agent script not found');
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204);
+        res.end();
+        return;
       }
-      return;
-    }
 
-    // Route 2: Serve POSIX Bash Agent Script
-    if (req.method === 'GET' && url.startsWith('/agent/install.sh')) {
-      const shPath = path.join(__dirname, '../public/agent/install.sh');
-      if (fs.existsSync(shPath)) {
-        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-        fs.createReadStream(shPath).pipe(res);
-      } else {
-        res.writeHead(404, { 'Content-Type': 'text/plain' });
-        res.end('Agent script not found');
-      }
-      return;
-    }
+      const url = req.url || '';
 
-    // Route 3: Endpoint Telemetry Ingestion
-    if (req.method === 'POST' && url === '/api/endpoints/telemetry') {
-      let body = '';
-      req.on('data', chunk => { body += chunk; });
-      req.on('end', () => {
-        try {
-          const telemetryData = JSON.parse(body || '{}');
-          // Forward telemetry event to renderer window via IPC
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('telemetry-received', telemetryData);
-          }
-
-          // Trigger OS Notification if an alert violation occurred
-          if (telemetryData.event_type === 'CLIPBOARD_DLP_BLOCKED' || telemetryData.event_type === 'AI_PROMPT_INTERCEPTED') {
-            if (Notification.isSupported()) {
-              new Notification({
-                title: 'PromptShield Alert • ' + (telemetryData.hostname || 'Endpoint Host'),
-                body: `Blocked ${telemetryData.violation_category || 'sensitive data'} transfer to AI tool.`,
-                urgency: 'critical',
-              }).show();
-            }
-          }
-
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ status: 'success', message: 'Telemetry received' }));
-        } catch {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Invalid JSON payload' }));
+      // Route 1: Serve PowerShell Agent Script
+      if (req.method === 'GET' && url.startsWith('/agent/install.ps1')) {
+        const psPath = path.join(__dirname, '../public/agent/install.ps1');
+        if (fs.existsSync(psPath)) {
+          res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+          fs.createReadStream(psPath).pipe(res);
+        } else {
+          res.writeHead(404, { 'Content-Type': 'text/plain' });
+          res.end('Agent script not found');
         }
-      });
-      return;
-    }
+        return;
+      }
 
-    // Route 4: Health Check
-    if (req.method === 'GET' && (url === '/api/health' || url === '/')) {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({
-        status: 'online',
-        service: 'PromptShield Local EDR Server',
-        port: LOCAL_SERVER_PORT,
-        timestamp: new Date().toISOString(),
-      }));
-      return;
-    }
+      // Route 2: Serve POSIX Bash Agent Script
+      if (req.method === 'GET' && url.startsWith('/agent/install.sh')) {
+        const shPath = path.join(__dirname, '../public/agent/install.sh');
+        if (fs.existsSync(shPath)) {
+          res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+          fs.createReadStream(shPath).pipe(res);
+        } else {
+          res.writeHead(404, { 'Content-Type': 'text/plain' });
+          res.end('Agent script not found');
+        }
+        return;
+      }
 
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Endpoint not found' }));
-  });
+      // Route 3: Endpoint Telemetry Ingestion
+      if (req.method === 'POST' && url === '/api/endpoints/telemetry') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', () => {
+          try {
+            const telemetryData = JSON.parse(body || '{}');
+            console.log(`[PromptShield Server] Received telemetry event from: ${telemetryData.hostname || 'Unknown host'}`);
 
-  localHttpServer.on('error', (err: any) => {
-    if (err.code === 'EADDRINUSE') {
-      console.warn(`Local telemetry server port ${LOCAL_SERVER_PORT} in use, continuing gracefully.`);
-    } else {
-      console.error('Local telemetry server error:', err);
-    }
-  });
+            // Forward telemetry event to renderer window via IPC
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('telemetry-received', telemetryData);
+            }
 
-  localHttpServer.listen(LOCAL_SERVER_PORT, '0.0.0.0', () => {
-    console.log(`PromptShield Local Telemetry Server active at http://0.0.0.0:${LOCAL_SERVER_PORT}`);
-  });
+            // Trigger OS Notification if an alert violation occurred
+            if (telemetryData.event_type === 'CLIPBOARD_DLP_BLOCKED' || telemetryData.event_type === 'AI_PROMPT_INTERCEPTED') {
+              try {
+                if (Notification.isSupported()) {
+                  new Notification({
+                    title: 'PromptShield Alert • ' + (telemetryData.hostname || 'Endpoint Host'),
+                    body: `Blocked ${telemetryData.violation_category || 'sensitive data'} transfer to AI tool.`,
+                    urgency: 'critical',
+                  }).show();
+                }
+              } catch (nErr) {
+                console.error('[PromptShield Server] Notification display error:', nErr);
+              }
+            }
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ status: 'success', message: 'Telemetry received' }));
+          } catch (parseErr) {
+            console.error('[PromptShield Server] Failed to parse telemetry payload:', parseErr);
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Invalid JSON payload' }));
+          }
+        });
+        return;
+      }
+
+      // Route 4: Health Check
+      if (req.method === 'GET' && (url === '/api/health' || url === '/')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          status: 'online',
+          service: 'PromptShield Local EDR Server',
+          port: LOCAL_SERVER_PORT,
+          timestamp: new Date().toISOString(),
+        }));
+        return;
+      }
+
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Endpoint not found' }));
+    });
+
+    localHttpServer.on('error', (err: any) => {
+      if (err.code === 'EADDRINUSE') {
+        console.error(`\n================================================================`);
+        console.error(`[PromptShield Server] CRITICAL PORT CONFLICT!`);
+        console.error(`Port ${LOCAL_SERVER_PORT} is ALREADY IN USE by another process.`);
+        console.error(`Run in terminal: netstat -ano | findstr :${LOCAL_SERVER_PORT} (Windows) or lsof -i :${LOCAL_SERVER_PORT} (Linux/Mac)`);
+        console.error(`================================================================\n`);
+      } else {
+        console.error(`[PromptShield Server] Socket error on port ${LOCAL_SERVER_PORT}:`, err);
+      }
+    });
+
+    localHttpServer.listen(LOCAL_SERVER_PORT, '0.0.0.0', () => {
+      console.log(`\n================================================================`);
+      console.log(`[PromptShield Server] Local HTTP Telemetry Server ACTIVE & LISTENING`);
+      console.log(`  -> URL:         http://0.0.0.0:${LOCAL_SERVER_PORT}`);
+      console.log(`  -> Health:      http://127.0.0.1:${LOCAL_SERVER_PORT}/api/health`);
+      console.log(`  -> Telemetry:   POST http://0.0.0.0:${LOCAL_SERVER_PORT}/api/endpoints/telemetry`);
+      console.log(`  -> Port ${LOCAL_SERVER_PORT} ready for LAN host enrollment`);
+      console.log(`================================================================\n`);
+    });
+
+    return localHttpServer;
+  } catch (err) {
+    console.error(`[PromptShield Server] FATAL ERROR creating HTTP server on port ${LOCAL_SERVER_PORT}:`, err);
+    return null;
+  }
 }
 
-function stopLocalTelemetryServer() {
+function stopLocalTelemetryServer(): void {
   if (localHttpServer) {
     try {
       localHttpServer.close();
-    } catch {}
+      console.log('[PromptShield Server] Local telemetry server closed.');
+    } catch (err) {
+      console.error('[PromptShield Server] Error closing telemetry server:', err);
+    }
     localHttpServer = null;
   }
 }
 
 // ============================================================================
-// 5. APP LIFECYCLE & IPC REGISTRATION
+// 5. BOOTSTRAP SUBSYSTEMS & APP LIFECYCLE
 // ============================================================================
 
-app.whenReady().then(() => {
-  createMainWindow();
-  startClipboardDaemon();
-  startLocalTelemetryServer();
+console.log('[PromptShield Main Process] Bootstrapping PromptShield subsystems...');
 
-  // IPC Handlers for UI queries
-  ipcMain.handle('get-daemon-status', () => ({
-    running: clipboardMonitorInterval !== null,
-    intervalMs: CLIPBOARD_CHECK_INTERVAL_MS,
-    blockedEventsCount: totalBlockedEventsCount,
-  }));
+// Start local telemetry server immediately on port 8000
+startLocalTelemetryServer();
 
-  ipcMain.handle('toggle-daemon', (_event, enabled: boolean) => {
-    if (enabled) {
-      startClipboardDaemon();
-    } else {
-      stopClipboardDaemon();
-    }
-    return { running: clipboardMonitorInterval !== null };
+// Electron Application Lifecycle
+app.whenReady()
+  .then(() => {
+    console.log('[PromptShield Main Process] Electron app.whenReady() completed successfully.');
+    createMainWindow();
+    startClipboardDaemon();
+
+    // IPC Handlers for UI queries
+    ipcMain.handle('get-daemon-status', () => ({
+      running: clipboardMonitorInterval !== null,
+      intervalMs: CLIPBOARD_CHECK_INTERVAL_MS,
+      blockedEventsCount: totalBlockedEventsCount,
+    }));
+
+    ipcMain.handle('toggle-daemon', (_event, enabled: boolean) => {
+      if (enabled) {
+        startClipboardDaemon();
+      } else {
+        stopClipboardDaemon();
+      }
+      return { running: clipboardMonitorInterval !== null };
+    });
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createMainWindow();
+      }
+    });
+  })
+  .catch((err) => {
+    console.error('\n================================================================');
+    console.error('[PromptShield Main Process] CRITICAL: app.whenReady() rejected:');
+    console.error(err);
+    console.error('================================================================\n');
   });
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createMainWindow();
-    }
-  });
-});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
@@ -441,6 +542,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('will-quit', () => {
+  console.log('[PromptShield Main Process] Application quitting, tearing down daemons...');
   stopClipboardDaemon();
   stopLocalTelemetryServer();
 });
