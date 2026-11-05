@@ -44,6 +44,9 @@ import { scanRepo } from './database/repositories/scanRepo';
 import { policyRepo } from './database/repositories/policyRepo';
 import { getActiveScannerRules } from './scanner/scannerEngine';
 import { EnrollHostModal, NewDevicePayload } from './ui/components/EnrollHostModal';
+import { AgentManagementModal } from './ui/components/AgentManagementModal';
+import { deviceService } from './services/deviceService';
+import { DeviceItem } from './types/device';
 
 // ============================================================================
 // 1. 3D METALLIC SHIELD MEDALLION (High-Fidelity SVG Graphic)
@@ -398,28 +401,6 @@ const NAV_ITEMS: NavItem[] = [
 // ============================================================================
 // 5. MAIN DASHBOARD CONTENT COMPONENT
 // ============================================================================
-// 5. MAIN DASHBOARD CONTENT COMPONENT
-// ============================================================================
-interface DeviceItem {
-  id: string;
-  name: string;
-  os: string;
-  ip: string;
-  status: 'Active' | 'Pending';
-  enrolledAt: string;
-}
-
-const INITIAL_DEVICES: DeviceItem[] = [
-  {
-    id: 'dev_finance_07',
-    name: 'FINANCE-LAPTOP-07',
-    os: 'Windows 11 (10.0.22631)',
-    ip: '192.168.1.107',
-    status: 'Active',
-    enrolledAt: 'Synchronized',
-  },
-];
-
 interface DashboardContentProps {
   onNavigate: (page: PageId) => void;
   searchQuery: string;
@@ -429,14 +410,38 @@ function DashboardContent({ onNavigate, searchQuery }: DashboardContentProps) {
   const { currentUser } = useAuth();
   const [wheelTab, setWheelTab] = useState<'wheel' | 'activity'>('wheel');
   const [showEnrollModal, setShowEnrollModal] = useState(false);
-  const [devices, setDevices] = useState<DeviceItem[]>(INITIAL_DEVICES);
+  const [selectedDeviceForSettings, setSelectedDeviceForSettings] = useState<DeviceItem | null>(null);
+  const [devices, setDevices] = useState<DeviceItem[]>([]);
+  const [isLoadingDevices, setIsLoadingDevices] = useState(true);
+
+  // Load enrolled devices from persistent local database on mount
+  useEffect(() => {
+    let isMounted = true;
+    const fetchPersistedDevices = async () => {
+      try {
+        const loaded = await deviceService.getDevices();
+        if (isMounted && Array.isArray(loaded)) {
+          setDevices(loaded);
+        }
+      } catch (err) {
+        console.error('[PromptShield UI] Error fetching enrolled devices:', err);
+      } finally {
+        if (isMounted) setIsLoadingDevices(false);
+      }
+    };
+
+    fetchPersistedDevices();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Real data metrics queried from SQLite
   const toolCount = 20; // Default curated AI tools in inventory catalog
   const piiLeakCount = '00'; // Default 0 leaks detected
   const activeRuleCount = 13; // 13 Safe Regex AST scanning rules
 
-  const handleEnrollComplete = (payload: NewDevicePayload) => {
+  const handleEnrollComplete = async (payload: NewDevicePayload) => {
     const newDevice: DeviceItem = {
       id: `dev_${Date.now()}`,
       name: payload.name || 'NEW-ENDPOINT',
@@ -444,9 +449,18 @@ function DashboardContent({ onNavigate, searchQuery }: DashboardContentProps) {
       ip: 'Awaiting connection...',
       status: 'Pending',
       enrolledAt: 'Waiting for deployment',
+      isolated: false,
+      clipboardMonitoring: true,
+      activeWindowMonitoring: true,
     };
 
-    setDevices((prev) => [newDevice, ...prev]);
+    try {
+      const persisted = await deviceService.addDevice(newDevice);
+      setDevices((prev) => [persisted, ...prev]);
+    } catch (err) {
+      console.error('[PromptShield UI] Error persisting new device:', err);
+      setDevices((prev) => [newDevice, ...prev]);
+    }
   };
 
   return (
@@ -546,17 +560,27 @@ function DashboardContent({ onNavigate, searchQuery }: DashboardContentProps) {
           {devices.map((device) => (
             <div
               key={device.id}
-              className="p-4 rounded-xl transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 dark:bg-[#101620] border border-slate-200/70 dark:border-slate-800/70"
+              className={`p-4 rounded-xl transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 border ${
+                device.status === 'Isolated'
+                  ? 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-300/70 dark:border-rose-900/50'
+                  : 'bg-slate-50 dark:bg-[#101620] border border-slate-200/70 dark:border-slate-800/70'
+              }`}
             >
               <div className="flex items-center gap-3.5">
                 <div
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                    device.status === 'Active'
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${
+                    device.status === 'Isolated'
+                      ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-800/40'
+                      : device.status === 'Active'
                       ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40'
                       : 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/40'
                   }`}
                 >
-                  <Laptop className="w-5 h-5" />
+                  {device.status === 'Isolated' ? (
+                    <Lock className="w-5 h-5 text-rose-500 animate-pulse" />
+                  ) : (
+                    <Laptop className="w-5 h-5" />
+                  )}
                 </div>
 
                 <div>
@@ -565,7 +589,12 @@ function DashboardContent({ onNavigate, searchQuery }: DashboardContentProps) {
                       {device.name}
                     </h3>
 
-                    {device.status === 'Active' ? (
+                    {device.status === 'Isolated' ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-100 dark:bg-rose-950/80 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-700/60 shadow-xs">
+                        <Lock className="w-3 h-3 text-rose-500" />
+                        Isolated (Lockdown)
+                      </span>
+                    ) : device.status === 'Active' ? (
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700/50">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                         Active
@@ -586,9 +615,14 @@ function DashboardContent({ onNavigate, searchQuery }: DashboardContentProps) {
                 </div>
               </div>
 
-              {/* Status explanation */}
-              <div className="flex items-center sm:text-right">
-                {device.status === 'Active' ? (
+              {/* Status explanation & Admin Settings Action */}
+              <div className="flex items-center gap-3 sm:text-right">
+                {device.status === 'Isolated' ? (
+                  <div className="flex items-center gap-1.5 text-xs text-rose-600 dark:text-rose-400 font-medium bg-rose-50 dark:bg-rose-950/40 px-3 py-1.5 rounded-lg border border-rose-200 dark:border-rose-800/50">
+                    <Lock className="w-3.5 h-3.5 text-rose-500" />
+                    <span>Host Isolated • Lockdown Active</span>
+                  </div>
+                ) : device.status === 'Active' ? (
                   <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
                     <CheckCircle className="w-4 h-4 text-emerald-500" />
                     <span>Continuous DLP Active • Agent Synchronized</span>
@@ -599,6 +633,17 @@ function DashboardContent({ onNavigate, searchQuery }: DashboardContentProps) {
                     <span>Waiting for command execution on target PC</span>
                   </div>
                 )}
+
+                {/* Requirement 3: Admin Settings (⚙️ Gear Icon) Button */}
+                <button
+                  type="button"
+                  onClick={() => setSelectedDeviceForSettings(device)}
+                  className="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-750 transition-all cursor-pointer flex items-center gap-1.5 border border-slate-300 dark:border-slate-700 shadow-2xs hover:scale-102 active:scale-98"
+                  title="Admin Settings • Process Explorer, Lockdown, and Controls"
+                >
+                  <Settings className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400 hover:rotate-45 transition-transform" />
+                  <span className="hidden md:inline font-mono">Admin Settings</span>
+                </button>
               </div>
             </div>
           ))}
@@ -610,6 +655,21 @@ function DashboardContent({ onNavigate, searchQuery }: DashboardContentProps) {
         isOpen={showEnrollModal}
         onClose={() => setShowEnrollModal(false)}
         onEnrollComplete={handleEnrollComplete}
+      />
+
+      {/* Requirement 3: Agent Management Modal (Process Explorer, Terminate Task, Lockdown, Features, Self-Destruct) */}
+      <AgentManagementModal
+        device={selectedDeviceForSettings}
+        isOpen={Boolean(selectedDeviceForSettings)}
+        onClose={() => setSelectedDeviceForSettings(null)}
+        onDeviceUpdated={(updated) => {
+          setDevices((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+          setSelectedDeviceForSettings(updated);
+        }}
+        onDeviceDeleted={(deletedId) => {
+          setDevices((prev) => prev.filter((d) => d.id !== deletedId));
+          setSelectedDeviceForSettings(null);
+        }}
       />
 
       {/* =====================================================================
@@ -973,21 +1033,13 @@ function MainLayout() {
 
             {/* Right Status & Profile */}
             <div className="flex items-center gap-3">
-              {/* Online / Offline Sync Mode Pill */}
+              {/* Local Enterprise EDR Status Pill */}
               <div
-                className={`hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border select-none transition-colors ${
-                  isOnline
-                    ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-600/40 text-emerald-800 dark:text-emerald-300'
-                    : 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-600/40 text-amber-800 dark:text-amber-300'
-                }`}
-                title={
-                  isOnline
-                    ? 'Connected online. Supabase credential & status sync active.'
-                    : 'Offline Mode. Local sql.js SQLite in-memory database.'
-                }
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border select-none transition-colors bg-teal-50 dark:bg-teal-950/40 border-teal-300 dark:border-teal-600/40 text-teal-800 dark:text-teal-300"
+                title="PromptShield v2.5.0 • 100% Local Enterprise EDR with persistent local storage and airgapped SQLite."
               >
-                <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-400 shadow-[0_0_6px_#34d399] animate-pulse' : 'bg-amber-400'}`} />
-                <span>{isOnline ? 'Supabase Sync' : 'Offline Cache'}</span>
+                <span className="w-2 h-2 rounded-full bg-teal-400 shadow-[0_0_6px_#2dd4bf] animate-pulse" />
+                <span>100% Local EDR (Airgapped)</span>
               </div>
 
               {/* Glowing 'DLP Guard Active' badge */}

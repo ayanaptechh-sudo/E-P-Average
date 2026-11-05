@@ -250,30 +250,13 @@ export const LoginPage: React.FC = () => {
          ========================================================================= */}
       <div className="md:w-1/2 bg-white dark:bg-slate-900 flex flex-col justify-center items-center p-8 sm:p-12 lg:p-20 relative">
         <div className="absolute top-4 right-4 flex items-center gap-2">
-          {/* Online / Offline Sync Mode Indicator */}
+          {/* 100% Local Enterprise EDR Mode Indicator */}
           <div
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold border transition-all select-none ${
-              isOnline
-                ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700/60 text-emerald-700 dark:text-emerald-300'
-                : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400'
-            }`}
-            title={
-              isOnline
-                ? 'Online Mode: Credentials verified with Supabase and cached locally in sql.js'
-                : 'Offline Mode: Authenticating directly with local sql.js SQLite cache'
-            }
+            className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold border border-teal-300 dark:border-teal-700/60 bg-teal-50 dark:bg-teal-950/40 text-teal-800 dark:text-teal-300 select-none shadow-xs"
+            title="100% Local Enterprise EDR. Authenticating directly with local in-memory sql.js SQLite store."
           >
-            {isOnline ? (
-              <>
-                <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_#10B981] animate-pulse" />
-                <span>Online (Supabase Sync)</span>
-              </>
-            ) : (
-              <>
-                <WifiOff className="w-3 h-3 text-slate-400" />
-                <span>Offline (Local SQLite)</span>
-              </>
-            )}
+            <span className="w-2 h-2 rounded-full bg-teal-400 shadow-[0_0_6px_#2dd4bf] animate-pulse" />
+            <span>100% Local Enterprise EDR</span>
           </div>
           <ThemeToggle />
         </div>
@@ -288,7 +271,7 @@ export const LoginPage: React.FC = () => {
             </p>
           </div>
 
-          {/* Session Revocation Warning Banner (Triggered when user is banned/kicked from Supabase) */}
+          {/* Session Revocation Warning Banner (Triggered when user status changes in Local Database) */}
           {revocationMessage && (
             <motion.div
               initial={{ opacity: 0, y: -4 }}

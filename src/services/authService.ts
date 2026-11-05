@@ -116,7 +116,7 @@ export const authService = {
       salt,
       role: 'Administrator',
       department: params.department || 'Security & Compliance',
-      status: 'Active',
+      status: 'active',
     });
 
     // Seed tools catalog, policies, settings

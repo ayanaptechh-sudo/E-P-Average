@@ -10,7 +10,6 @@ import { initDatabase } from '../database/db';
 import { settingsRepo } from '../database/repositories/reportRepo';
 import { policyRepo } from '../database/repositories/policyRepo';
 import { loginUser, initStatusSyncListener, AuthSource } from './authSync';
-import { isSupabaseConfigured, pushUserToSupabase } from './supabaseClient';
 
 interface AuthContextType {
   currentUser: AppUser | null;
@@ -170,15 +169,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsFirstRun(false);
     setCurrentUser(admin);
     setAuthSource('offline_local_cache');
-
-    // Attempt to push initial admin to Supabase if configured and online
-    try {
-      if (navigator.onLine && isSupabaseConfigured()) {
-        pushUserToSupabase(admin).catch((err) => {
-          console.warn('[AuthProvider] Supabase initial admin sync deferred:', err);
-        });
-      }
-    } catch {}
   };
 
   const clearRevocationMessage = () => {
