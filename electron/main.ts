@@ -6,7 +6,7 @@
  * 100% Local Enterprise EDR: Persistent Storage, Local Command Queue, and Telemetry Server.
  */
 
-import { app, BrowserWindow, clipboard, Notification, ipcMain } from 'electron';
+import { app, BrowserWindow, clipboard, Notification, ipcMain, Tray, Menu, nativeImage } from 'electron';
 import * as path from 'path';
 import * as http from 'http';
 import * as fs from 'fs';
@@ -355,8 +355,9 @@ const commandQueue = new CommandQueueManager();
 
 let clipboardMonitorInterval: NodeJS.Timeout | null = null;
 let lastScannedText = '';
-let totalBlockedEventsCount = 0;
 let mainWindow: BrowserWindow | null = null;
+let appTray: Tray | null = null;
+let isQuitting = false;
 
 export function triggerOsAlert(patternName: string, category: string): void {
   try {
@@ -475,9 +476,24 @@ function createMainWindow(): BrowserWindow | null {
       },
     });
 
+    const isHiddenStartup = process.argv.includes('--hidden') || process.argv.includes('--minimized') || process.argv.includes('-hidden');
+
     mainWindow.once('ready-to-show', () => {
-      mainWindow?.show();
-      console.log('[PromptShield Main Process] Main window visible.');
+      if (!isHiddenStartup) {
+        mainWindow?.show();
+        console.log('[PromptShield Main Process] Main window visible.');
+      } else {
+        console.log('[PromptShield Main Process] Started in background / hidden system-tray mode.');
+      }
+    });
+
+    // Minimize to tray on close instead of terminating background DLP
+    mainWindow.on('close', (event) => {
+      if (!isQuitting) {
+        event.preventDefault();
+        mainWindow?.hide();
+        console.log('[PromptShield Main Process] Window minimized to system tray.');
+      }
     });
 
     const devServerUrl = process.env.VITE_DEV_SERVER_URL || process.env.ELECTRON_START_URL || 'http://localhost:3000';
@@ -507,6 +523,59 @@ function createMainWindow(): BrowserWindow | null {
   } catch (err) {
     console.error('[PromptShield Main Process] CRITICAL ERROR creating window:', err);
     return null;
+  }
+}
+
+function setupSystemTray(): void {
+  try {
+    if (appTray) return;
+    const iconDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAZElEQVQ4T2NkoBAwUqifYdQAUozi0vD/v0y+FkbmZqYfDKyM30m1gIHp/w9/k3n/3/9nZmBlYmJgYGDgZGJh+M/P+v8HAzMDgzgDCwMjfAOMtACjFhC0gFFkE5n6fxgYGBgYAD6dHR1lM7N/AAAAAElFTkSuQmCC';
+    const icon = nativeImage.createFromDataURL(iconDataUrl);
+
+    appTray = new Tray(icon);
+    appTray.setToolTip('PromptShield Enterprise EDR Agent (Active)');
+
+    const contextMenu = Menu.buildFromTemplate([
+      {
+        label: 'Open PromptShield Dashboard',
+        click: () => {
+          if (mainWindow) {
+            mainWindow.show();
+            mainWindow.focus();
+          } else {
+            createMainWindow();
+          }
+        },
+      },
+      {
+        label: 'DLP Guard Status: Active',
+        enabled: false,
+      },
+      { type: 'separator' },
+      {
+        label: 'Exit PromptShield',
+        click: () => {
+          isQuitting = true;
+          app.quit();
+        },
+      },
+    ]);
+
+    appTray.setContextMenu(contextMenu);
+    appTray.on('click', () => {
+      if (!mainWindow) {
+        createMainWindow();
+      } else if (mainWindow.isVisible()) {
+        mainWindow.hide();
+      } else {
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    });
+
+    console.log('[PromptShield Main Process] System tray initialized.');
+  } catch (err) {
+    console.warn('[PromptShield Main Process] System tray initialization error:', err);
   }
 }
 
@@ -938,6 +1007,7 @@ app.whenReady()
     console.log('[PromptShield Main Process] Electron app.whenReady() resolved. Creating window...');
     createMainWindow();
     startClipboardDaemon();
+    setupSystemTray();
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
@@ -949,8 +1019,15 @@ app.whenReady()
     console.error('[PromptShield Main Process] CRITICAL: app.whenReady() rejected:', err);
   });
 
+app.on('before-quit', () => {
+  isQuitting = true;
+});
+
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+  // Keep running in tray / background unless explicitly quit
+  if (process.platform === 'darwin' || appTray) {
+    // Keep active in tray
+  } else {
     app.quit();
   }
 });
