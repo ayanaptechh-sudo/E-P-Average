@@ -78,7 +78,7 @@ export function EnrollHostModal({ isOpen, onClose, onEnrollComplete }: EnrollHos
 
   let generatedCommand = '';
   if (targetOs === 'Windows') {
-    generatedCommand = `$h=@{Authorization='Bearer ${token}'}; $guid=[guid]::NewGuid().ToString(); $p=Join-Path $env:TEMP ('promptshield-install-'+$guid+'.ps1'); Invoke-WebRequest -Uri "${cleanServer}/agent/install.ps1" -Headers $h -OutFile $p; powershell -ExecutionPolicy Bypass -File $p -Server "${cleanServer}" -Token "${token}" -AgentName "${cleanName}";`;
+    generatedCommand = `$h=@{Authorization='Bearer ${token}'}; $guid=[guid]::NewGuid().ToString(); $p=Join-Path $env:TEMP ('promptshield-install-'+$guid+'.ps1'); Invoke-WebRequest -UseBasicParsing -Uri "${cleanServer}/agent/install.ps1" -Headers $h -OutFile $p; powershell -ExecutionPolicy Bypass -File $p -Server "${cleanServer}" -Token "${token}" -AgentName "${cleanName}";`;
   } else {
     generatedCommand = `curl -s -H "Authorization: Bearer ${token}" "${cleanServer}/agent/install.sh" | bash -s -- --server "${cleanServer}" --token "${token}" --agent-name "${cleanName}"`;
   }

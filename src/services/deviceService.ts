@@ -166,6 +166,39 @@ export const deviceService = {
   },
 
   /**
+   * Triggers agent self-delete / uninstall.
+   * Sends request to backend (IPC or POST /api/agent/:id/uninstall) to queue uninstall command.
+   */
+  async uninstallAgent(agentId: string): Promise<{ status: string; commandId: string; state?: string }> {
+    try {
+      if (typeof window !== 'undefined' && window.electronAPI?.uninstallAgent) {
+        return await window.electronAPI.uninstallAgent(agentId);
+      }
+    } catch (err) {
+      console.warn('[DeviceService] Electron IPC uninstallAgent failed, trying HTTP route:', err);
+    }
+
+    try {
+      const res = await fetch(`http://127.0.0.1:8000/api/agent/${encodeURIComponent(agentId)}/uninstall`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (httpErr) {
+      console.warn('[DeviceService] HTTP uninstall route fallback failed:', httpErr);
+    }
+
+    // Local queue fallback
+    return await this.queueCommand(agentId, 'UNINSTALL_AGENT', {
+      action: 'self_delete',
+      status: 'pending_uninstall',
+      manualRemovalPath: 'C:\\Windows\\Temp\\PromptShield\\',
+    });
+  },
+
+  /**
    * Queues an agent command (kill process, isolate, feature toggle, self-destruct).
    */
   async queueCommand(agentId: string, command: AgentCommand['command'], payload?: Record<string, any>): Promise<any> {

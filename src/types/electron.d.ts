@@ -15,7 +15,8 @@ export interface ElectronAPI {
   queueCommand: (agentId: string, command: string, payload?: any) => Promise<{ status: string; commandId: string }>;
   getPendingCommands: (agentId: string) => Promise<AgentCommand[]>;
   getDaemonStatus: () => Promise<{ running: boolean; intervalMs: number; blockedEventsCount: number }>;
-  toggleDaemon: (enabled: boolean) => Promise<{ running: boolean }>;
+  uninstallAgent: (agentId: string) => Promise<{ status: string; commandId: string; state?: string }>;
+  onAgentConnected: (callback: (data: { agentId: string; status: 'active' | 'Active'; device?: DeviceItem }) => void) => () => void;
   onTelemetryReceived: (callback: (data: any) => void) => () => void;
   onClipboardLeakBlocked: (callback: (data: any) => void) => () => void;
 }

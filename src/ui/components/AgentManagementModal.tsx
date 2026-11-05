@@ -28,6 +28,8 @@ import {
   Clock,
   Radio,
   Zap,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { DeviceItem, ProcessItem, AgentCommand } from '../../types/device';
 import { deviceService } from '../../services/deviceService';
@@ -191,7 +193,38 @@ export function AgentManagementModal({
     }
   };
 
-  // 4. Self-Destruct & Delete Agent
+  const [pathCopied, setPathCopied] = useState(false);
+  const manualRemovalPath = 'C:\\Windows\\Temp\\PromptShield\\';
+
+  const handleCopyPath = () => {
+    try {
+      navigator.clipboard.writeText(manualRemovalPath);
+      setPathCopied(true);
+      setTimeout(() => setPathCopied(false), 2500);
+    } catch {
+      showNotification('Failed to copy path', 'warn');
+    }
+  };
+
+  // Trigger Agent Self-Delete (Uninstall) via backend API/IPC
+  const handleTriggerUninstall = async () => {
+    setIsBusy(true);
+    try {
+      const res = await deviceService.uninstallAgent(device.id);
+      showNotification(
+        `Agent self-delete command queued in local database (status: ${res.state || 'pending_uninstall'}). Endpoint will execute removal on next heartbeat.`,
+        'success'
+      );
+      await loadPendingCommands();
+    } catch (err) {
+      console.error('[AgentModal] Error queueing uninstall command:', err);
+      showNotification('Failed to queue agent uninstall command.', 'error');
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  // Optional: Console-level purge & wipe
   const handleSelfDestruct = async () => {
     if (!confirmUninstall) {
       setConfirmUninstall(true);
@@ -200,15 +233,8 @@ export function AgentManagementModal({
 
     setIsBusy(true);
     try {
-      // 1. Queue self-destruct command for endpoint
-      await deviceService.queueCommand(device.id, 'UNINSTALL_AGENT', {
-        purgeFiles: true,
-        restoreFirewall: true,
-      });
-
-      // 2. Delete device from persistent local database
+      await deviceService.uninstallAgent(device.id);
       await deviceService.deleteDevice(device.id);
-
       onDeviceDeleted(device.id);
       onClose();
     } catch (err) {
@@ -541,51 +567,75 @@ export function AgentManagementModal({
             </div>
           )}
 
-          {/* Section 4: Self-Destruct Danger Zone */}
-          <div className="p-4 rounded-2xl bg-rose-50/70 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400 shrink-0">
-                <AlertTriangle className="w-5 h-5" />
+          {/* Section 4: Trigger Agent Self-Delete / Uninstall Danger Zone */}
+          <div className="p-5 rounded-2xl bg-rose-50/70 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/50 flex flex-col gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400 shrink-0">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold uppercase font-mono text-rose-700 dark:text-rose-400">
+                    Endpoint Agent Self-Delete & Uninstallation
+                  </h4>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
+                    Queue an agent self-delete command in the local database. The host will sanitize and wipe its payload on next heartbeat.
+                  </p>
+                </div>
               </div>
-              <div>
-                <h4 className="text-xs font-bold uppercase font-mono text-rose-700 dark:text-rose-400">
-                  Critical Danger Zone
-                </h4>
-                <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
-                  Queue payload purge command and delete this device from the central EDR console.
-                </p>
+
+              {/* Requirement 2: Prominent Red Button labeled "Trigger Agent Self-Delete (Uninstall)" */}
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  disabled={isBusy}
+                  onClick={handleTriggerUninstall}
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white shadow-md transition-all cursor-pointer flex items-center gap-2 shrink-0 hover:scale-102 active:scale-98 disabled:opacity-50"
+                  title="Queue self-delete command in local database"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Trigger Agent Self-Delete (Uninstall)</span>
+                </button>
               </div>
             </div>
 
-            <div>
-              {confirmUninstall ? (
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    disabled={isBusy}
-                    onClick={handleSelfDestruct}
-                    className="px-3.5 py-2 rounded-xl text-xs font-bold bg-rose-700 hover:bg-rose-800 text-white shadow-md transition-all cursor-pointer animate-pulse"
-                  >
-                    Confirm Permanent Delete
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setConfirmUninstall(false)}
-                    className="px-3 py-2 rounded-xl text-xs font-semibold bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 cursor-pointer"
-                  >
-                    Cancel
-                  </button>
+            {/* Requirement 3: Show Installation Path */}
+            <div className="pt-3 border-t border-rose-200/60 dark:border-rose-900/40">
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 font-mono mb-1.5 flex items-center justify-between">
+                <span>Manual Removal Path</span>
+                <span className="text-[10px] text-slate-400 font-sans normal-case">(For manual cleanup if agent goes offline)</span>
+              </label>
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    readOnly
+                    value={`Manual removal path: ${manualRemovalPath}`}
+                    className="w-full px-3.5 py-2 text-xs font-mono bg-white dark:bg-slate-900/90 border border-slate-300 dark:border-slate-700/80 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none select-all"
+                  />
                 </div>
-              ) : (
                 <button
                   type="button"
-                  onClick={() => setConfirmUninstall(true)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
+                  onClick={handleCopyPath}
+                  className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
+                  title="Copy path to clipboard"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Delete & Uninstall Agent from Endpoint</span>
+                  {pathCopied ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-500" />
+                      <span className="text-emerald-600 dark:text-emerald-400">Copied</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Copy Path</span>
+                    </>
+                  )}
                 </button>
-              )}
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 font-sans">
+                If the endpoint is offline or disconnected, manually delete this directory on the target PC to purge the agent files.
+              </p>
             </div>
           </div>
         </div>

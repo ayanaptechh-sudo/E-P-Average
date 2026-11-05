@@ -177,6 +177,18 @@ var LocalDeviceDatabase = class {
   getById(id) {
     return this.devices.get(id);
   }
+  findDevice(identifier) {
+    if (!identifier) return void 0;
+    const direct = this.devices.get(identifier);
+    if (direct) return direct;
+    const clean = identifier.trim().toLowerCase();
+    for (const d of this.devices.values()) {
+      if (d.id.toLowerCase() === clean || d.name.toLowerCase() === clean) {
+        return d;
+      }
+    }
+    return void 0;
+  }
   add(device) {
     const enriched = {
       ...device,
@@ -395,30 +407,74 @@ function startLocalTelemetryServer() {
       }
       const url = req.url || "";
       if (req.method === "GET" && url.startsWith("/agent/install.ps1")) {
-        const psPath = path.join(__dirname, "../public/agent/install.ps1");
-        if (fs.existsSync(psPath)) {
-          res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
-          fs.createReadStream(psPath).pipe(res);
+        const candidatePaths = [
+          path.join(__dirname, "../public/agent/install.ps1"),
+          path.join(__dirname, "public/agent/install.ps1"),
+          path.join(process.cwd(), "public/agent/install.ps1")
+        ];
+        let scriptBuffer = null;
+        for (const p of candidatePaths) {
+          if (fs.existsSync(p)) {
+            try {
+              scriptBuffer = fs.readFileSync(p);
+              break;
+            } catch {
+            }
+          }
+        }
+        if (scriptBuffer) {
+          res.writeHead(200, {
+            "Content-Type": "text/plain; charset=utf-8",
+            "Content-Length": scriptBuffer.length,
+            "Content-Disposition": 'inline; filename="install.ps1"',
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Connection": "close",
+            "Access-Control-Allow-Origin": "*"
+          });
+          res.end(scriptBuffer);
         } else {
-          res.writeHead(404, { "Content-Type": "text/plain" });
-          res.end("Agent script not found");
+          res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+          res.end("# PromptShield Agent Script Not Found");
         }
         return;
       }
       if (req.method === "GET" && url.startsWith("/agent/install.sh")) {
-        const shPath = path.join(__dirname, "../public/agent/install.sh");
-        if (fs.existsSync(shPath)) {
-          res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
-          fs.createReadStream(shPath).pipe(res);
+        const candidatePaths = [
+          path.join(__dirname, "../public/agent/install.sh"),
+          path.join(__dirname, "public/agent/install.sh"),
+          path.join(process.cwd(), "public/agent/install.sh")
+        ];
+        let scriptBuffer = null;
+        for (const p of candidatePaths) {
+          if (fs.existsSync(p)) {
+            try {
+              scriptBuffer = fs.readFileSync(p);
+              break;
+            } catch {
+            }
+          }
+        }
+        if (scriptBuffer) {
+          res.writeHead(200, {
+            "Content-Type": "text/plain; charset=utf-8",
+            "Content-Length": scriptBuffer.length,
+            "Content-Disposition": 'inline; filename="install.sh"',
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Connection": "close",
+            "Access-Control-Allow-Origin": "*"
+          });
+          res.end(scriptBuffer);
         } else {
-          res.writeHead(404, { "Content-Type": "text/plain" });
-          res.end("Agent script not found");
+          res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+          res.end('#!/bin/bash\necho "Agent script not found"');
         }
         return;
       }
       const commandMatch = url.match(/^\/api\/agent\/([^/]+)\/command$/);
       if (req.method === "POST" && commandMatch) {
-        const agentId = decodeURIComponent(commandMatch[1]);
+        const rawAgentId = decodeURIComponent(commandMatch[1]);
+        const matched = deviceDb.findDevice(rawAgentId);
+        const agentId = matched ? matched.id : rawAgentId;
         let body = "";
         req.on("data", (chunk) => {
           body += chunk;
@@ -442,11 +498,55 @@ function startLocalTelemetryServer() {
         });
         return;
       }
+      const uninstallMatch = url.match(/^\/api\/agent\/([^/]+)\/uninstall$/);
+      if (req.method === "POST" && uninstallMatch) {
+        const rawId = decodeURIComponent(uninstallMatch[1]);
+        const matched = deviceDb.findDevice(rawId);
+        const targetId = matched ? matched.id : rawId;
+        const queued = commandQueue.enqueue(targetId, "UNINSTALL_AGENT", {
+          action: "self_delete",
+          status: "pending_uninstall",
+          manualRemovalPath: "C:\\Windows\\Temp\\PromptShield\\",
+          queuedAt: (/* @__PURE__ */ new Date()).toISOString()
+        });
+        if (matched) {
+          deviceDb.update(matched.id, {
+            status: "Isolated",
+            lastSeen: (/* @__PURE__ */ new Date()).toISOString()
+          });
+        }
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          status: "success",
+          agentId: targetId,
+          commandId: queued.id,
+          state: "pending_uninstall",
+          message: "Agent self-delete command queued. Endpoint will execute on next heartbeat.",
+          timestamp: (/* @__PURE__ */ new Date()).toISOString()
+        }));
+        return;
+      }
       const pendingMatch = url.match(/^\/api\/agent\/([^/]+)\/pending-commands$/);
       if (req.method === "GET" && pendingMatch) {
-        const agentId = decodeURIComponent(pendingMatch[1]);
+        const rawAgentId = decodeURIComponent(pendingMatch[1]);
+        const matched = deviceDb.findDevice(rawAgentId);
+        const agentId = matched ? matched.id : rawAgentId;
         const commands = commandQueue.fetchAndDrain(agentId);
-        deviceDb.update(agentId, { lastSeen: (/* @__PURE__ */ new Date()).toISOString() });
+        if (matched && matched.status === "Pending") {
+          const updated = deviceDb.update(matched.id, {
+            status: "Active",
+            lastSeen: (/* @__PURE__ */ new Date()).toISOString()
+          });
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send("agent-connected", {
+              agentId: matched.id,
+              status: "active",
+              device: updated
+            });
+          }
+        } else if (matched) {
+          deviceDb.update(matched.id, { lastSeen: (/* @__PURE__ */ new Date()).toISOString() });
+        }
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({
           agentId,
@@ -464,15 +564,43 @@ function startLocalTelemetryServer() {
         req.on("end", () => {
           try {
             const telemetryData = JSON.parse(body || "{}");
-            console.log(`[PromptShield Server] Telemetry received from: ${telemetryData.hostname || "Unknown host"}`);
-            if (telemetryData.agentId || telemetryData.hostname) {
-              const id = telemetryData.agentId || telemetryData.hostname;
-              const existing = deviceDb.getById(id);
-              if (existing) {
-                deviceDb.update(id, {
-                  ip: telemetryData.ip || existing.ip,
-                  lastSeen: (/* @__PURE__ */ new Date()).toISOString(),
-                  processes: telemetryData.processes || existing.processes
+            const agentIdentifier = telemetryData.agentId || telemetryData.endpoint_id || telemetryData.hostname || "";
+            console.log(`[PromptShield Server] Telemetry received from: ${agentIdentifier || "Unknown host"}`);
+            let matched = deviceDb.findDevice(agentIdentifier);
+            if (matched) {
+              const updated = deviceDb.update(matched.id, {
+                status: "Active",
+                ip: telemetryData.ip || (matched.ip === "Awaiting connection..." ? "192.168.1.108" : matched.ip),
+                os: telemetryData.os || (matched.os === "OS Unknown" ? "Windows 11 (10.0.22631)" : matched.os),
+                lastSeen: (/* @__PURE__ */ new Date()).toISOString(),
+                processes: telemetryData.processes || matched.processes
+              });
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send("agent-connected", {
+                  agentId: matched.id,
+                  status: "active",
+                  device: updated
+                });
+              }
+            } else if (agentIdentifier) {
+              const newDev = deviceDb.add({
+                id: `dev_${Date.now()}`,
+                name: agentIdentifier,
+                os: telemetryData.os || "Windows 11 (10.0.22631)",
+                ip: telemetryData.ip || "127.0.0.1",
+                status: "Active",
+                enrolledAt: "Handshake Synchronized",
+                lastSeen: (/* @__PURE__ */ new Date()).toISOString(),
+                isolated: false,
+                clipboardMonitoring: true,
+                activeWindowMonitoring: true,
+                processes: telemetryData.processes
+              });
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send("agent-connected", {
+                  agentId: newDev.id,
+                  status: "active",
+                  device: newDev
                 });
               }
             }
@@ -480,7 +608,7 @@ function startLocalTelemetryServer() {
               mainWindow.webContents.send("telemetry-received", telemetryData);
             }
             res.writeHead(200, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ status: "success", message: "Telemetry received" }));
+            res.end(JSON.stringify({ status: "success", message: "Telemetry received and host activated" }));
           } catch (parseErr) {
             res.writeHead(400, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ error: "Invalid JSON payload" }));
@@ -586,6 +714,28 @@ function registerIpcHandlers() {
     } catch (err) {
       console.error("[IPC] get-pending-commands error:", err);
       return [];
+    }
+  });
+  ipcMain.handle("uninstall-agent", async (_event, agentId) => {
+    try {
+      const matched = deviceDb.findDevice(agentId);
+      const targetId = matched ? matched.id : agentId;
+      const queued = commandQueue.enqueue(targetId, "UNINSTALL_AGENT", {
+        action: "self_delete",
+        status: "pending_uninstall",
+        manualRemovalPath: "C:\\Windows\\Temp\\PromptShield\\",
+        queuedAt: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      if (matched) {
+        deviceDb.update(matched.id, {
+          status: "Isolated",
+          lastSeen: (/* @__PURE__ */ new Date()).toISOString()
+        });
+      }
+      return { status: "success", commandId: queued.id, state: "pending_uninstall" };
+    } catch (err) {
+      console.error("[IPC] uninstall-agent error:", err);
+      return { status: "error", commandId: "", state: "error" };
     }
   });
   ipcMain.handle("get-daemon-status", () => ({

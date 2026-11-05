@@ -44,7 +44,17 @@ var electronAPI = {
   toggleDaemon: (enabled) => {
     return import_electron.ipcRenderer.invoke("toggle-daemon", enabled);
   },
+  uninstallAgent: (agentId) => {
+    return import_electron.ipcRenderer.invoke("uninstall-agent", agentId);
+  },
   // Event Listeners
+  onAgentConnected: (callback) => {
+    const handler = (_event, data) => callback(data);
+    import_electron.ipcRenderer.on("agent-connected", handler);
+    return () => {
+      import_electron.ipcRenderer.removeListener("agent-connected", handler);
+    };
+  },
   onTelemetryReceived: (callback) => {
     const handler = (_event, data) => callback(data);
     import_electron.ipcRenderer.on("telemetry-received", handler);
